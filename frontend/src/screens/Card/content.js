@@ -1,386 +1,194 @@
-// content.js
-// 防止重复创建
-let cardContainer = null;
-let isVisible = false;
-
-// 创建卡片容器和 Shadow DOM
-function createCard() {
-  // 如果已经存在，直接返回
-  if (cardContainer) {
-    return;
+(function () {
+    if (window.__TAB_CLEANER_CONTENT_INSTALLED) return;
+    window.__TAB_CLEANER_CONTENT_INSTALLED = true;
+  
+    let cardContainer = null;
+    let isVisible = false;
+  
+    // 加载 CSS（把 url(static/img/...) 改为扩展路径）
+    async function loadCss(relPath) {
+      try {
+        const url = chrome.runtime.getURL(relPath);
+        let cssText = await (await fetch(url)).text();
+        cssText = cssText.replace(
+          /url\((["']?)(?:\.\.\/)*(?:\.\/)?static\/img\/([^"')]+)\1\)/g,
+          (_m, _q, name) => `url("${chrome.runtime.getURL("static/img/" + name)}")`
+        );
+  
+        return cssText;
+      } catch (err) {
+        console.error("Failed to load CSS:", relPath, err);
+        return "";
+      }
+    }
+  
+    // ✅ 改成 async；把原来顶层的 await 放进来
+    async function createCard() {
+      if (cardContainer) return;
+  
+      cardContainer = document.createElement("div");
+      cardContainer.id = "tab-cleaner-card-container";
+      Object.assign(cardContainer.style, {
+        position: "fixed",
+        top: "20px",
+        right: "20px",
+        zIndex: String(2147483647),
+        width: "320px",
+        height: "485px",
+        background: "transparent", // 关键：透明背景
+      });
+  
+      const shadow = cardContainer.attachShadow({ mode: "open" });
+  
+      const guideCss = await loadCss("assets/styleguide.css"); // 原来顶层 await 移到这里
+      const mainCss = await loadCss("assets/style.css");
+  
+      const html = `
+        <style>
+          :host { all: initial; display:block; }
+          *, *::before, *::after { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+          ${guideCss}
+          ${mainCss}
+  
+          .card { opacity:0; transform:translateY(-8px) scale(.985);
+                  transition:transform .24s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+          .card.visible { opacity:1; transform:translateY(0) scale(1); }
+          .home-button, .clean-button, .details-button, .draggable { cursor: pointer; }
+      .card .div { 
+        display: block !important; 
+        position: relative; 
+        width: 100%; 
+        height: 100%; 
+      }
+  
+  /* 1) 关掉外层那张“透明卡”：不再让 .card 自己画底色/阴影/伪元素 */
+  .card {
+    background: transparent !important;
+    box-shadow: none !important;
   }
-
-  // 创建容器
-  cardContainer = document.createElement('div');
-  cardContainer.id = 'tab-cleaner-card-container';
-  cardContainer.style.position = 'fixed';
-  cardContainer.style.top = '20px';
-  cardContainer.style.right = '20px';
-  cardContainer.style.zIndex = '999999';
-  cardContainer.style.width = '320px';
-  cardContainer.style.height = '485px';
+  .card::before,
+  .card::after { content: none !important; }
   
-  // 创建 Shadow DOM
-  const shadowRoot = cardContainer.attachShadow({ mode: 'open' });
+  /* 2) 把真正的面板放在里层：统一圆角、裁切底图 */
+  :host { --tc-radius: 28px; }            /* ← 想要的圆角在这改 */
+  .card, .card .div {
+    border-radius: var(--tc-radius) !important;
+    overflow: hidden;                     /* 裁掉底图四角 */
+  }
+        
+          </style>
   
-  // 添加样式和 HTML 结构
-  shadowRoot.innerHTML = `
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-        -webkit-font-smoothing: antialiased;
-      }
-      
-      :host {
-        all: initial;
-        display: block;
-      }
-      
-      .card {
-        position: relative;
-        width: 320px;
-        height: 485px;
-        background-image: url(${chrome.runtime.getURL('static/img/background-2.png')});
-        background-size: 100% 100%;
-        border-radius: 20px;
-        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.15);
-        overflow: hidden;
-        opacity: 0;
-        transform: translateX(20px);
-        transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
-      }
-      
-      .card.visible {
-        opacity: 1;
-        transform: translateX(0);
-      }
-      
-      .card .draggable {
-        height: 2.31%;
-        left: 39.76%;
-        position: absolute;
-        top: 4.63%;
-        width: 18.28%;
-        cursor: move;
-      }
-      
-      .card .window-button {
-        height: 268px;
-        left: 32px;
-        position: absolute;
-        top: 49px;
-        width: 268px;
-      }
-      
-      .card .image {
-        height: 100%;
-        position: relative;
-        width: 100%;
-      }
-      
-      .card .window {
-        height: 100%;
-        left: 0;
-        position: absolute;
-        top: 0;
-        width: 100%;
-        background: transparent;
-      }
-      
-      .card .group {
-        align-items: flex-start;
-        background-image: url(${chrome.runtime.getURL('static/img/vector-7.svg')});
-        background-size: 100% 100%;
-        display: flex;
-        height: 100%;
-        left: 0;
-        min-width: 100%;
-        opacity: 0.5;
-        position: absolute;
-        top: 0;
-      }
-      
-      .card .group-wrapper {
-        display: flex;
-        height: 268px;
-        width: 268px;
-      }
-      
-      .card .group-2 {
-        background-image: url(${chrome.runtime.getURL('static/img/vector-8.svg')});
-        background-size: 100% 100%;
-        flex: 1;
-        mix-blend-mode: screen;
-        opacity: 0.45;
-        width: 268.24px;
-      }
-      
-      .card .vector {
-        height: 88.22%;
-        left: 5.94%;
-        position: absolute;
-        top: 5.89%;
-        width: 88.22%;
-      }
-      
-      .card .clip-path-group {
-        height: 88.22% !important;
-        left: 5.89% !important;
-        position: absolute !important;
-        top: 5.89% !important;
-        width: 88.22% !important;
-      }
-      
-      .card .ellipse {
-        border: 3px solid;
-        border-color: #c5c5c5;
-        border-radius: 135.5px;
-        box-shadow: 0px 0px 10.4px 1px #00000040;
-        height: 101.03%;
-        left: calc(50% - 135px);
-        position: absolute;
-        top: 0;
-        width: 271px;
-      }
-      
-      .card .buttons {
-        height: 100px;
-        position: absolute;
-        bottom: 30px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 240px;
-      }
-      
-      .card .home-button {
-        height: 99px;
-        left: 160px;
-        position: absolute;
-        top: 19px;
-        width: 88px;
-        cursor: pointer;
-        transition: transform 0.2s;
-      }
-      
-      .card .home-button:hover {
-        transform: scale(1.05);
-      }
-      
-      .card .clean-button {
-        height: 135px;
-        left: calc(50% - 49px);
-        position: absolute;
-        top: 0;
-        width: 96px;
-        cursor: pointer;
-        transition: transform 0.2s;
-      }
-      
-      .card .clean-button:hover {
-        transform: scale(1.05);
-      }
-      
-      .card .details-button {
-        height: 99px;
-        left: -10px;
-        position: absolute;
-        top: 18px;
-        width: 88px;
-        cursor: pointer;
-        transition: transform 0.2s;
-      }
-      
-      .card .details-button:hover {
-        transform: scale(1.05);
-      }
-      
-      /* 关闭按钮样式 */
-      .close-button {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        width: 30px;
-        height: 30px;
-        background: rgba(255, 255, 255, 0.9);
-        border: none;
-        border-radius: 50%;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 18px;
-        color: #666;
-        transition: all 0.2s;
-        z-index: 10;
-      }
-      
-      .close-button:hover {
-        background: rgba(255, 255, 255, 1);
-        color: #333;
-        transform: scale(1.1);
-      }
-    </style>
-    
-    <div class="card" id="card">
-      <button class="close-button" id="closeBtn">×</button>
-      
-      <img class="draggable" alt="Draggable" src="${chrome.runtime.getURL('static/img/draggable-2.svg')}" />
-      
-      <div class="window-button">
-        <div class="image">
-          <div class="window">
-            <div class="group">
-              <div class="group-wrapper">
-                <div class="group-2"></div>
+        <div class="card" id="tc-card">
+          <div class="div">
+            <img class="draggable" alt="Draggable" src="${chrome.runtime.getURL('static/img/draggable-2.svg')}" />
+            <div class="window-button">
+              <div class="image">
+                <div class="window">
+                  <div class="group"><div class="group-wrapper"><div class="group-2"></div></div></div>
+                  <img class="vector" alt="Vector" src="${chrome.runtime.getURL('static/img/vector-6.svg')}" />
+                  <div class="clip-path-group"></div>
+                </div>
+                <div class="ellipse"></div>
               </div>
             </div>
-            
-            <img class="vector" alt="Vector" src="${chrome.runtime.getURL('static/img/vector-6.svg')}" />
-            
-            <!-- ClipPathGroup2 组件需要转换为 SVG 或图片 -->
-            <div class="clip-path-group"></div>
           </div>
-          
-          <div class="ellipse"></div>
+          <div class="buttons">
+            <img class="home-button" id="homeBtn" alt="Home" src="${chrome.runtime.getURL('static/img/home-button-2.png')}"/>
+            <img class="clean-button" id="cleanBtn" alt="Clean" src="${chrome.runtime.getURL('static/img/clean-button.png')}"/>
+            <img class="details-button" id="detailsBtn" alt="Details" src="${chrome.runtime.getURL('static/img/details-button.svg')}"/>
+          </div>
         </div>
-      </div>
-      
-      <div class="buttons">
-        <img
-          class="home-button"
-          alt="Home button"
-          src="${chrome.runtime.getURL('static/img/home-button-2.png')}"
-          id="homeBtn"
-        />
-        
-        <img
-          class="clean-button"
-          alt="Clean button"
-          src="${chrome.runtime.getURL('static/img/clean-button.png')}"
-          id="cleanBtn"
-        />
-        
-        <img
-          class="details-button"
-          alt="Details button"
-          src="${chrome.runtime.getURL('static/img/details-button.svg')}"
-          id="detailsBtn"
-        />
-      </div>
-    </div>
-  `;
   
-  // 添加事件监听器
-  const card = shadowRoot.getElementById('card');
-  const closeBtn = shadowRoot.getElementById('closeBtn');
-  const homeBtn = shadowRoot.getElementById('homeBtn');
-  const cleanBtn = shadowRoot.getElementById('cleanBtn');
-  const detailsBtn = shadowRoot.getElementById('detailsBtn');
+        <button id="tc-close"
+          style="position:absolute;top:10px;right:10px;width:30px;height:30px;border:none;border-radius:50%;
+                 background:rgba(255,255,255,.95);color:#333;font-size:18px;display:flex;align-items:center;
+                 justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.12);cursor:pointer;z-index:10;">×</button>
+      `;
+      shadow.innerHTML = html;
+      const g = shadow.querySelector('.group');
+      const g2 = shadow.querySelector('.group-2');
+      const divShell = shadow.querySelector('.card > .div'); // 背景外壳
   
-  // 关闭按钮
-  closeBtn.addEventListener('click', hideCard);
+      if (g) g.style.backgroundImage = `url("${chrome.runtime.getURL('static/img/vector-7.svg')}")`;
+      if (g2) g2.style.backgroundImage = `url("${chrome.runtime.getURL('static/img/vector-8.svg')}")`;
+      if (divShell) divShell.style.backgroundImage = `url("${chrome.runtime.getURL('static/img/background-2.png')}")`;
   
-  // 功能按钮
-  homeBtn.addEventListener('click', () => {
-    console.log('Home button clicked');
-    // 实现主页功能
-    chrome.runtime.sendMessage({ action: 'home' });
-  });
   
-  cleanBtn.addEventListener('click', () => {
-    console.log('Clean button clicked');
-    // 实现清理功能
-    chrome.runtime.sendMessage({ action: 'clean' });
-  });
+      // —— 调试：打印最终的图片 URL（看是否真的替换成功 & 加载到位）
+      const dbg = (el, name) => {
+        if (!el) return console.warn(name, 'missing');
+        const cs = getComputedStyle(el);
+        console.log(
+          `[dbg] ${name}`,
+          'bg=', cs.backgroundImage,
+          'size=', cs.backgroundSize,
+          'pos=', cs.backgroundPosition
+        );
+      };
+      dbg(g, 'group');
+      dbg(g2, 'group-2');
+      dbg(divShell, 'card>.div');
   
-  detailsBtn.addEventListener('click', () => {
-    console.log('Details button clicked');
-    // 实现详情功能
-    chrome.runtime.sendMessage({ action: 'details' });
-  });
+      // 保险：强制背景完整三件套（有的 CSS 里没写的话）
+      if (g && !getComputedStyle(g).backgroundImage.includes('chrome-extension://')) {
+        g.style.background = `url("${chrome.runtime.getURL('static/img/vector-7.svg')}") center / cover no-repeat`;
+      }
+      if (g2 && !getComputedStyle(g2).backgroundImage.includes('chrome-extension://')) {
+        g2.style.background = `url("${chrome.runtime.getURL('static/img/vector-8.svg')}") center / cover no-repeat`;
+      }
+      if (divShell && !getComputedStyle(divShell).backgroundImage.includes('chrome-extension://')) {
+        divShell.style.background = `url("${chrome.runtime.getURL('static/img/background-2.png')}") center / cover no-repeat`;
+      }
   
-  // 点击卡片外部关闭（可选）
-  document.addEventListener('click', (e) => {
-    if (isVisible && !cardContainer.contains(e.target)) {
-      // 如果需要点击外部关闭，取消注释下一行
-      // hideCard();
+      // <img> 资源也做个 onerror 提示
+      const dragImg = shadow.querySelector('img.draggable');
+      [dragImg, shadow.getElementById('homeBtn'), shadow.getElementById('cleanBtn'), shadow.getElementById('detailsBtn')]
+        .filter(Boolean).forEach(img => {
+          img.onerror = () => console.warn('[dbg] image failed:', img.src);
+          img.onload = () => console.log('[dbg] image ok:', img.src);
+        });
+  
+      const card = shadow.getElementById('tc-card');
+      const closeBtn = shadow.getElementById('tc-close');
+      const homeBtn = shadow.getElementById('homeBtn');
+      const cleanBtn = shadow.getElementById('cleanBtn');
+      const detailsBtn = shadow.getElementById('detailsBtn');
+  
+      closeBtn.addEventListener("click", hideCard);
+      homeBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "home" }));
+      cleanBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "clean" }));
+      detailsBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "details" }));
+  
+      document.body.appendChild(cardContainer);
+      requestAnimationFrame(() => card.classList.add("visible"));
     }
-  });
   
-  // ESC 键关闭
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isVisible) {
-      hideCard();
+    async function showCard() {
+      if (!cardContainer) await createCard();        // ✅ 等待异步创建完成
+      cardContainer.style.display = "block";
+      const card = cardContainer.shadowRoot.getElementById("tc-card");
+      card && card.classList.add("visible");
+      isVisible = true;
     }
-  });
   
-  // 将容器添加到页面
-  document.body.appendChild(cardContainer);
+    function hideCard() {
+      if (!cardContainer) return;
+      const card = cardContainer.shadowRoot.getElementById("tc-card");
+      card && card.classList.remove("visible");
+      setTimeout(() => { if (cardContainer) cardContainer.style.display = "none"; }, 240);
+      isVisible = false;
+    }
   
-  // 触发显示动画
-  setTimeout(() => {
-    card.classList.add('visible');
-  }, 10);
-}
-
-// 显示卡片
-function showCard() {
-  if (!cardContainer) {
-    createCard();
-  }
+    function toggleCard() { isVisible ? hideCard() : showCard(); }
   
-  const shadowRoot = cardContainer.shadowRoot;
-  const card = shadowRoot.getElementById('card');
+    chrome.runtime.onMessage.addListener((req, _s, send) => {
+      if (!req || !req.action) return false;
+      if (req.action === "toggle" || req.action === "toggleCard") { toggleCard(); send?.({ ok: true }); return true; }
+      if (req.action === "show") { showCard(); send?.({ ok: true }); return true; }
+      if (req.action === "hide") { hideCard(); send?.({ ok: true }); return true; }
+      return false;
+    });
   
-  cardContainer.style.display = 'block';
-  setTimeout(() => {
-    card.classList.add('visible');
-  }, 10);
+    console.log("Tab Cleaner content (classic) loaded.");
+  })();
   
-  isVisible = true;
-}
-
-// 隐藏卡片
-function hideCard() {
-  if (!cardContainer) return;
-  
-  const shadowRoot = cardContainer.shadowRoot;
-  const card = shadowRoot.getElementById('card');
-  
-  card.classList.remove('visible');
-  
-  setTimeout(() => {
-    cardContainer.style.display = 'none';
-  }, 300);
-  
-  isVisible = false;
-}
-
-// 切换显示/隐藏
-function toggleCard() {
-  if (isVisible) {
-    hideCard();
-  } else {
-    showCard();
-  }
-}
-
-// 监听来自 background script 的消息
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'toggle') {
-    toggleCard();
-    sendResponse({ status: 'ok' });
-  } else if (request.action === 'show') {
-    showCard();
-    sendResponse({ status: 'ok' });
-  } else if (request.action === 'hide') {
-    hideCard();
-    sendResponse({ status: 'ok' });
-  }
-  return true;
-});
-
-// 初始化时不自动显示，等待用户点击
-console.log('Tab Cleaner content script loaded');
