@@ -1,13 +1,20 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Component } from "../../components/Component";
 import { getImageUrl } from "../../shared/utils";
 import { DraggableImage } from "./DraggableImage";
 import { initialImages } from "./imageData";
 import { CanvasTools } from "./CanvasTools";
+import { OpenGraphCard } from "./OpenGraphCard";
 import "./style.css";
 
 export const PersonalSpace = () => {
+  // OpenGraph 数据
+  const [opengraphData, setOpengraphData] = useState([]);
+  const [selectedOG, setSelectedOG] = useState(null); // 选中的 OpenGraph 卡片
+  
   // 管理图片位置和选中状态
+  // 如果有 OpenGraph 数据，隐藏原有图片；否则显示原有图片
+  const [showOriginalImages, setShowOriginalImages] = useState(true);
   const [images, setImages] = useState(() =>
     initialImages.map(img => ({
       ...img,
@@ -29,6 +36,97 @@ export const PersonalSpace = () => {
 
   // AI 聚类面板显示状态
   const [showAIClusteringPanel, setShowAIClusteringPanel] = useState(false);
+
+  // 从 storage 加载 OpenGraph 数据
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.get(['opengraphData'], (result) => {
+        try {
+          if (result.opengraphData) {
+            // 处理两种可能的数据结构：{data: [...]} 或直接是数组
+            const ogData = Array.isArray(result.opengraphData) 
+              ? result.opengraphData 
+              : (result.opengraphData.data || []);
+            
+            console.log('[PersonalSpace] Loaded OpenGraph data:', ogData);
+            
+            // 确保 ogData 是数组
+            if (!Array.isArray(ogData)) {
+              console.warn('[PersonalSpace] OpenGraph data is not an array:', ogData);
+              return;
+            }
+            
+            // 过滤掉失败的数据
+            const validOG = ogData.filter(item => 
+              item && 
+              typeof item === 'object' && 
+              item.success && 
+              item.image
+            );
+            
+            if (validOG.length > 0) {
+              setShowOriginalImages(false); // 隐藏原有图片
+              
+              // 计算放射状布局位置
+              const positionedOG = calculateRadialLayout(validOG);
+              setOpengraphData(positionedOG);
+            }
+          }
+        } catch (error) {
+          console.error('[PersonalSpace] Error loading OpenGraph data:', error);
+        }
+      });
+    }
+  }, []);
+
+  // 计算放射状布局（从圆心开始，一圈一圈向外）
+  const calculateRadialLayout = (ogData) => {
+    if (!ogData || !Array.isArray(ogData) || ogData.length === 0) {
+      return [];
+    }
+    
+    const centerX = 720; // 画布中心 X (1440 / 2)
+    const centerY = 512; // 画布中心 Y (1024 / 2)
+    const imageSize = 120; // 图片大小
+    const spacing = 150; // 每圈之间的间距
+    
+    const positioned = [];
+    let currentRing = 0;
+    let currentIndexInRing = 0;
+    let itemsInCurrentRing = 1; // 第一圈 1 个，第二圈 6 个，第三圈 12 个...
+    
+    ogData.forEach((item, index) => {
+      if (!item || typeof item !== 'object') {
+        console.warn('[PersonalSpace] Invalid item in OpenGraph data:', item);
+        return;
+      }
+      if (currentIndexInRing >= itemsInCurrentRing) {
+        currentRing++;
+        currentIndexInRing = 0;
+        // 每圈数量：1, 6, 12, 18, 24...
+        itemsInCurrentRing = currentRing === 0 ? 1 : currentRing * 6;
+      }
+      
+      const angleStep = (2 * Math.PI) / itemsInCurrentRing;
+      const angle = currentIndexInRing * angleStep;
+      const radius = currentRing * spacing + (currentRing === 0 ? 0 : spacing / 2);
+      
+      const x = centerX + Math.cos(angle) * radius - imageSize / 2;
+      const y = centerY + Math.sin(angle) * radius - imageSize / 2;
+      
+      positioned.push({
+        ...item,
+        x: Math.round(x),
+        y: Math.round(y),
+        width: imageSize,
+        height: imageSize,
+      });
+      
+      currentIndexInRing++;
+    });
+    
+    return positioned;
+  };
 
   // 处理选中
   const handleSelect = (id, isMultiSelect) => {
@@ -326,7 +424,8 @@ export const PersonalSpace = () => {
         ref={canvasRef}
         style={{ cursor: getCanvasCursor() }}
       >
-        {images.map(img => (
+        {/* 原有图片（仅在未加载 OpenGraph 时显示） */}
+        {showOriginalImages && images.map(img => (
           <DraggableImage
             key={img.id}
             id={img.id}
@@ -342,6 +441,52 @@ export const PersonalSpace = () => {
             onDragEnd={handleDragEnd}
           />
         ))}
+
+        {/* OpenGraph 图片（放射状布局） */}
+        {!showOriginalImages && opengraphData && Array.isArray(opengraphData) && opengraphData.length > 0 && opengraphData.map((og, index) => {
+          if (!og || typeof og !== 'object' || !og.x || !og.y) {
+            return null;
+          }
+          return (
+          <div
+            key={`og-${index}`}
+            style={{
+              position: 'absolute',
+              left: `${og.x}px`,
+              top: `${og.y}px`,
+              width: `${og.width}px`,
+              height: `${og.height}px`,
+              cursor: 'pointer',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+            }}
+            onClick={() => setSelectedOG(og)}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.25)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+            }}
+          >
+            <img
+              src={og.image || 'https://via.placeholder.com/120'}
+              alt={og.title || og.url}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+              }}
+              onError={(e) => {
+                e.target.src = 'https://via.placeholder.com/120?text=No+Image';
+              }}
+            />
+          </div>
+          );
+        })}
 
         {/* 保留非图片元素 */}
         <div className="i-leave-you-love-and" />
@@ -502,6 +647,14 @@ export const PersonalSpace = () => {
           <div className="text-wrapper-24">AI 聚类</div>
         </div>
       </div>
+
+      {/* OpenGraph 卡片（点击图片后显示） */}
+      {selectedOG && (
+        <OpenGraphCard
+          data={selectedOG}
+          onClose={() => setSelectedOG(null)}
+        />
+      )}
     </div>
   );
 };

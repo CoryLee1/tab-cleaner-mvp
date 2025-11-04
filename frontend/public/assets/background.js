@@ -143,6 +143,77 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+
+  // 处理 Clean Button：抓取所有 tab 的 OpenGraph
+  if (req.action === "clean") {
+    console.log("[Tab Cleaner Background] Clean button clicked, fetching OpenGraph for all tabs...");
+    
+    // 获取所有打开的 tabs
+    chrome.tabs.query({}, async (tabs) => {
+      try {
+        // 过滤掉 chrome://, chrome-extension://, about: 等特殊页面
+        const validTabs = tabs.filter(tab => {
+          const url = tab.url || '';
+          return !url.startsWith('chrome://') && 
+                 !url.startsWith('chrome-extension://') && 
+                 !url.startsWith('about:') &&
+                 !url.startsWith('edge://');
+        });
+
+        console.log(`[Tab Cleaner Background] Found ${validTabs.length} valid tabs`);
+
+        // 调用后端 API 抓取 OpenGraph
+        const response = await fetch('http://localhost:8000/api/v1/tabs/opengraph', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tabs: validTabs.map(tab => ({
+              url: tab.url,
+              title: tab.title,
+              id: tab.id,
+            }))
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const opengraphData = await response.json();
+        console.log('[Tab Cleaner Background] OpenGraph data received:', opengraphData);
+
+        // 保存到 storage，供个人空间使用
+        // 确保数据结构一致：{ok: true, data: [...]}
+        await chrome.storage.local.set({ 
+          opengraphData: {
+            ok: opengraphData.ok || true,
+            data: opengraphData.data || (Array.isArray(opengraphData) ? opengraphData : [])
+          },
+          lastCleanTime: Date.now()
+        });
+
+        // 关闭这些 tabs
+        const tabIds = validTabs.map(tab => tab.id);
+        if (tabIds.length > 0) {
+          chrome.tabs.remove(tabIds);
+        }
+
+        // 打开个人空间
+        chrome.tabs.create({
+          url: chrome.runtime.getURL("personalspace.html")
+        });
+
+        sendResponse({ ok: true, data: opengraphData });
+      } catch (error) {
+        console.error('[Tab Cleaner Background] Failed to fetch OpenGraph:', error);
+        sendResponse({ ok: false, error: error.message });
+      }
+    });
+
+    return true; // 异步响应
+  }
   
   // 处理其他消息类型
   return false;
