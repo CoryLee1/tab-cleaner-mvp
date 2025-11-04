@@ -10,7 +10,8 @@ import "./style.css";
 export const PersonalSpace = () => {
   // OpenGraph 数据
   const [opengraphData, setOpengraphData] = useState([]);
-  const [selectedOG, setSelectedOG] = useState(null); // 选中的 OpenGraph 卡片
+  const [selectedOG, setSelectedOG] = useState(null); // 选中的 OpenGraph 卡片（用于显示详情）
+  const lastOGClickRef = useRef({ time: 0, id: null }); // 用于双击检测
   
   // 管理图片位置和选中状态
   // 如果有 OpenGraph 数据，隐藏原有图片；否则显示原有图片
@@ -67,9 +68,12 @@ export const PersonalSpace = () => {
             if (validOG.length > 0) {
               setShowOriginalImages(false); // 隐藏原有图片
               
-              // 计算放射状布局位置
-              const positionedOG = calculateRadialLayout(validOG);
-              setOpengraphData(positionedOG);
+            // 计算放射状布局位置，并为每个 OpenGraph 图片生成唯一 ID
+            const positionedOG = calculateRadialLayout(validOG).map((og, index) => ({
+              ...og,
+              id: `og-${index}-${Date.now()}`, // 生成唯一 ID
+            }));
+            setOpengraphData(positionedOG);
             }
           }
         } catch (error) {
@@ -153,11 +157,46 @@ export const PersonalSpace = () => {
 
   // 处理拖拽结束
   const handleDragEnd = (id, x, y) => {
-    setImages(prev =>
-      prev.map(img =>
-        img.id === id ? { ...img, x, y } : img
-      )
-    );
+    // 如果是 OpenGraph 图片
+    if (id.startsWith('og-')) {
+      setOpengraphData(prev =>
+        prev.map(og =>
+          og.id === id ? { ...og, x, y } : og
+        )
+      );
+      // 记录到历史
+      const prevOG = opengraphData.find(og => og.id === id);
+      if (prevOG) {
+        addToHistory({ 
+          type: 'opengraph-move', 
+          action: 'move', 
+          ogId: id, 
+          x, 
+          y, 
+          prevX: prevOG.x, 
+          prevY: prevOG.y 
+        });
+      }
+    } else {
+      // 原有图片
+      setImages(prev =>
+        prev.map(img =>
+          img.id === id ? { ...img, x, y } : img
+        )
+      );
+      // 记录到历史
+      const prevImg = images.find(img => img.id === id);
+      if (prevImg) {
+        addToHistory({ 
+          type: 'image-move', 
+          action: 'move', 
+          imageId: id, 
+          x, 
+          y, 
+          prevImages: images 
+        });
+      }
+    }
   };
 
   // 改进的套索选择 - 更精确的碰撞检测
@@ -165,6 +204,8 @@ export const PersonalSpace = () => {
     if (!lassoPath || lassoPath.length < 3) return;
     
     const selected = new Set(selectedIds); // 保留已选中的
+    
+    // 处理原有图片
     images.forEach(img => {
       // 检查图片是否与套索路径相交
       const imgRect = {
@@ -200,6 +241,45 @@ export const PersonalSpace = () => {
         selected.add(img.id);
       }
     });
+    
+    // 处理 OpenGraph 图片
+    if (opengraphData && Array.isArray(opengraphData)) {
+      opengraphData.forEach(og => {
+        if (!og || !og.x || !og.y || !og.width || !og.height) return;
+        
+        const ogRect = {
+          left: og.x,
+          top: og.y,
+          right: og.x + og.width,
+          bottom: og.y + og.height,
+        };
+        
+        // 检查 OpenGraph 图片的四个角和中心点
+        const corners = [
+          { x: og.x, y: og.y },
+          { x: og.x + og.width, y: og.y },
+          { x: og.x, y: og.y + og.height },
+          { x: og.x + og.width, y: og.y + og.height },
+          { x: og.x + og.width / 2, y: og.y + og.height / 2 },
+        ];
+        
+        const hasPointInLasso = corners.some(corner => 
+          isPointInPolygon(corner.x, corner.y, lassoPath)
+        );
+        
+        const hasPathIntersection = lassoPath.some(point => 
+          point.x >= ogRect.left && point.x <= ogRect.right &&
+          point.y >= ogRect.top && point.y <= ogRect.bottom
+        );
+        
+        const hasBoundaryIntersection = isPolylineIntersectRect(lassoPath, ogRect);
+        
+        if (hasPointInLasso || hasPathIntersection || hasBoundaryIntersection) {
+          selected.add(og.id);
+        }
+      });
+    }
+    
     const prevSelected = new Set(selectedIds);
     setSelectedIds(selected);
     // 记录选中状态到历史
@@ -340,6 +420,16 @@ export const PersonalSpace = () => {
           setImages(action.prevImages);
         }
         break;
+      case 'opengraph-move':
+        // 恢复 OpenGraph 图片位置
+        if (action.ogId && action.prevX !== undefined && action.prevY !== undefined) {
+          setOpengraphData(prev =>
+            prev.map(og =>
+              og.id === action.ogId ? { ...og, x: action.prevX, y: action.prevY } : og
+            )
+          );
+        }
+        break;
     }
     
     setHistoryIndex(prev => prev - 1);
@@ -394,6 +484,16 @@ export const PersonalSpace = () => {
           img.id === action.imageId ? { ...img, x: action.x, y: action.y } : img
         ));
         break;
+      case 'opengraph-move':
+        // 恢复 OpenGraph 图片位置
+        if (action.ogId && action.x !== undefined && action.y !== undefined) {
+          setOpengraphData(prev =>
+            prev.map(og =>
+              og.id === action.ogId ? { ...og, x: action.x, y: action.y } : og
+            )
+          );
+        }
+        break;
     }
     
     setHistoryIndex(nextIndex);
@@ -442,49 +542,38 @@ export const PersonalSpace = () => {
           />
         ))}
 
-        {/* OpenGraph 图片（放射状布局） */}
-        {!showOriginalImages && opengraphData && Array.isArray(opengraphData) && opengraphData.length > 0 && opengraphData.map((og, index) => {
-          if (!og || typeof og !== 'object' || !og.x || !og.y) {
+        {/* OpenGraph 图片（使用 DraggableImage，支持拖拽和工具） */}
+        {!showOriginalImages && opengraphData && Array.isArray(opengraphData) && opengraphData.length > 0 && opengraphData.map((og) => {
+          if (!og || typeof og !== 'object' || !og.x || !og.y || !og.id) {
             return null;
           }
+          
+          // 直接使用 DraggableImage，位置由组件内部管理
           return (
-          <div
-            key={`og-${index}`}
-            style={{
-              position: 'absolute',
-              left: `${og.x}px`,
-              top: `${og.y}px`,
-              width: `${og.width}px`,
-              height: `${og.height}px`,
-              cursor: 'pointer',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-              transition: 'transform 0.2s, box-shadow 0.2s',
-            }}
-            onClick={() => setSelectedOG(og)}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.25)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-            }}
-          >
-            <img
+            <DraggableImage
+              key={og.id}
+              id={og.id}
+              className="opengraph-image"
               src={og.image || 'https://via.placeholder.com/120'}
               alt={og.title || og.url}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
+              initialX={og.x}
+              initialY={og.y}
+              width={og.width}
+              height={og.height}
+              isSelected={selectedIds.has(og.id)}
+              onSelect={(id, isMultiSelect) => {
+                handleSelect(id, isMultiSelect);
+                // 快速双击显示 OpenGraph 卡片（300ms 内两次点击同一图片）
+                const now = Date.now();
+                if (lastOGClickRef.current.id === id && now - lastOGClickRef.current.time < 300) {
+                  setSelectedOG(og);
+                  lastOGClickRef.current = { time: 0, id: null };
+                } else {
+                  lastOGClickRef.current = { time: now, id };
+                }
               }}
-              onError={(e) => {
-                e.target.src = 'https://via.placeholder.com/120?text=No+Image';
-              }}
+              onDragEnd={handleDragEnd}
             />
-          </div>
           );
         })}
 
@@ -501,6 +590,11 @@ export const PersonalSpace = () => {
           activeTool={activeTool}
           onLassoSelect={handleLassoSelect}
           selectedIds={selectedIds}
+          drawPaths={drawPaths}
+          setDrawPaths={setDrawPaths}
+          textElements={textElements}
+          setTextElements={setTextElements}
+          onHistoryChange={handleHistoryChange}
         />
       </div>
 

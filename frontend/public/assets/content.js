@@ -384,16 +384,43 @@
     if (homeBtn) {
       homeBtn.addEventListener("click", () => {
         // 打开个人空间页面
-        chrome.runtime.sendMessage({ action: "open-personalspace" }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.error("[Tab Cleaner] Failed to open personal space:", chrome.runtime.lastError);
-          } else {
-            console.log("[Tab Cleaner] Personal space opened");
-          }
-        });
+        try {
+          chrome.runtime.sendMessage({ action: "open-personalspace" }, (response) => {
+            if (chrome.runtime.lastError) {
+              // Extension context invalidated 错误处理
+              if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+                console.warn("[Tab Cleaner] Extension was reloaded, please refresh the page");
+              } else {
+                console.error("[Tab Cleaner] Failed to open personal space:", chrome.runtime.lastError);
+              }
+            } else {
+              console.log("[Tab Cleaner] Personal space opened");
+            }
+          });
+        } catch (error) {
+          console.error("[Tab Cleaner] Error sending message:", error);
+        }
       });
     }
-    if (cleanBtn) cleanBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "clean" }));
+    if (cleanBtn) {
+      cleanBtn.addEventListener("click", () => {
+        try {
+          chrome.runtime.sendMessage({ action: "clean" }, (response) => {
+            if (chrome.runtime.lastError) {
+              if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+                console.warn("[Tab Cleaner] Extension was reloaded, please refresh the page");
+              } else {
+                console.error("[Tab Cleaner] Failed to clean tabs:", chrome.runtime.lastError);
+              }
+            } else {
+              console.log("[Tab Cleaner] Clean action sent:", response);
+            }
+          });
+        } catch (error) {
+          console.error("[Tab Cleaner] Error sending clean message:", error);
+        }
+      });
+    }
     if (detailsBtn) {
       detailsBtn.addEventListener("click", () => {
         // 切换详情图片显示/隐藏

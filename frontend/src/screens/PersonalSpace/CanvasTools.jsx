@@ -61,15 +61,20 @@ export const CanvasTools = ({
         if (currentPath && currentPath.length > 1) {
           const pathToSave = [...currentPath];
           console.log('[Draw] Saving path with', pathToSave.length, 'points', pathToSave);
-          setDrawPaths(prev => {
-            const newPaths = [...prev, pathToSave];
-            console.log('[Draw] Total paths after save:', newPaths.length);
-            // 通知父组件历史记录变化
-            if (onHistoryChange) {
-              onHistoryChange({ type: 'draw', action: 'add', path: pathToSave });
-            }
-            return newPaths;
-          });
+          if (setDrawPaths && typeof setDrawPaths === 'function') {
+            setDrawPaths(prev => {
+              const safePrev = Array.isArray(prev) ? prev : [];
+              const newPaths = [...safePrev, pathToSave];
+              console.log('[Draw] Total paths after save:', newPaths.length);
+              // 通知父组件历史记录变化
+              if (onHistoryChange && typeof onHistoryChange === 'function') {
+                onHistoryChange({ type: 'draw', action: 'add', path: pathToSave });
+              }
+              return newPaths;
+            });
+          } else {
+            console.error('[Draw] setDrawPaths is not a function:', typeof setDrawPaths);
+          }
         }
         return []; // 清空当前路径
       });
@@ -160,33 +165,43 @@ export const CanvasTools = ({
     e.stopPropagation(); // 阻止事件冒泡
   };
 
-  const handleTextConfirm = (text) => {
-    if (currentText && text.trim()) {
-      const newTextElement = { ...currentText, text };
-      setTextElements(prev => {
-        const newElements = [...prev, newTextElement];
-        // 通知父组件历史记录变化
-        if (onHistoryChange) {
-          onHistoryChange({ type: 'text', action: 'add', element: newTextElement });
+      const handleTextConfirm = (text) => {
+        if (currentText && text.trim()) {
+          const newTextElement = { ...currentText, text };
+          if (setTextElements && typeof setTextElements === 'function') {
+            setTextElements(prev => {
+              const safePrev = Array.isArray(prev) ? prev : [];
+              const newElements = [...safePrev, newTextElement];
+              // 通知父组件历史记录变化
+              if (onHistoryChange && typeof onHistoryChange === 'function') {
+                onHistoryChange({ type: 'text', action: 'add', element: newTextElement });
+              }
+              return newElements;
+            });
+          } else {
+            console.error('[Text] setTextElements is not a function:', typeof setTextElements);
+          }
         }
-        return newElements;
-      });
-    }
-    setCurrentText(null);
-  };
+        setCurrentText(null);
+      };
 
-  // 删除文字元素
-  const handleDeleteText = (textId) => {
-    setTextElements(prev => {
-      const deletedElement = prev.find(el => el.id === textId);
-      const newElements = prev.filter(el => el.id !== textId);
-      // 通知父组件历史记录变化
-      if (onHistoryChange && deletedElement) {
-        onHistoryChange({ type: 'text', action: 'delete', element: deletedElement });
-      }
-      return newElements;
-    });
-  };
+      // 删除文字元素
+      const handleDeleteText = (textId) => {
+        if (setTextElements && typeof setTextElements === 'function') {
+          setTextElements(prev => {
+            const safePrev = Array.isArray(prev) ? prev : [];
+            const deletedElement = safePrev.find(el => el.id === textId);
+            const newElements = safePrev.filter(el => el.id !== textId);
+            // 通知父组件历史记录变化
+            if (onHistoryChange && typeof onHistoryChange === 'function' && deletedElement) {
+              onHistoryChange({ type: 'text', action: 'delete', element: deletedElement });
+            }
+            return newElements;
+          });
+        } else {
+          console.error('[Text] setTextElements is not a function:', typeof setTextElements);
+        }
+      };
 
   // 事件监听
   useEffect(() => {

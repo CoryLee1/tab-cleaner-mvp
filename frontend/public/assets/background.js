@@ -137,11 +137,22 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   // 处理打开个人空间消息
   if (req.action === "open-personalspace") {
     console.log("[Tab Cleaner Background] Opening personal space...");
-    chrome.tabs.create({
-      url: chrome.runtime.getURL("personalspace.html")
-    });
-    sendResponse({ ok: true });
-    return true;
+    try {
+      chrome.tabs.create({
+        url: chrome.runtime.getURL("personalspace.html")
+      }, (tab) => {
+        if (chrome.runtime.lastError) {
+          console.error("[Tab Cleaner Background] Failed to create tab:", chrome.runtime.lastError);
+          sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+        } else {
+          sendResponse({ ok: true, tabId: tab?.id });
+        }
+      });
+    } catch (error) {
+      console.error("[Tab Cleaner Background] Error opening personal space:", error);
+      sendResponse({ ok: false, error: error.message });
+    }
+    return true; // 异步响应
   }
 
   // 处理 Clean Button：抓取所有 tab 的 OpenGraph
@@ -194,10 +205,18 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           lastCleanTime: Date.now()
         });
 
-        // 关闭这些 tabs
-        const tabIds = validTabs.map(tab => tab.id);
+        // 关闭这些 tabs（添加错误处理，避免关闭已关闭的 tab）
+        const tabIds = validTabs.map(tab => tab.id).filter(id => id !== undefined);
         if (tabIds.length > 0) {
-          chrome.tabs.remove(tabIds);
+          // 逐个关闭，避免一个失败导致全部失败
+          for (const tabId of tabIds) {
+            try {
+              await chrome.tabs.remove(tabId);
+            } catch (error) {
+              // Tab 可能已经被关闭，忽略错误
+              console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed or invalid:`, error.message);
+            }
+          }
         }
 
         // 打开个人空间

@@ -106,6 +106,8 @@ export const DraggableImage = ({
         height: height ? `${height}px` : undefined,
         cursor: isDragging ? 'grabbing' : 'grab',
         userSelect: 'none',
+        borderRadius: className === 'opengraph-image' ? '8px' : undefined,
+        objectFit: className === 'opengraph-image' ? 'cover' : undefined,
       }}
       onMouseDown={handleMouseDown}
       draggable={false}

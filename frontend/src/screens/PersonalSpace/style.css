@@ -34,6 +34,18 @@
   z-index: 200;
 }
 
+/* OpenGraph 图片样式 */
+.personal-space .canvas img.opengraph-image {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.personal-space .canvas img.opengraph-image:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
 .personal-space .clipboard {
   aspect-ratio: 0.67;
   height: 126px;
