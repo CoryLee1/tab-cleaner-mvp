@@ -2,6 +2,26 @@
   if (window.__TAB_CLEANER_CONTENT_INSTALLED) return;
   window.__TAB_CLEANER_CONTENT_INSTALLED = true;
 
+  // 加载 pet 模块
+  (function loadPetModule() {
+    if (window.__TAB_CLEANER_PET) {
+      console.log("[Tab Cleaner] Pet module already loaded");
+      return; // 已经加载
+    }
+    console.log("[Tab Cleaner] Loading pet module...");
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('assets/pet.js');
+    script.onload = () => {
+      console.log("[Tab Cleaner] Pet script loaded, checking module:", window.__TAB_CLEANER_PET);
+      script.remove();
+    };
+    script.onerror = (e) => {
+      console.error("[Tab Cleaner] Failed to load pet.js:", e);
+      script.remove();
+    };
+    (document.head || document.documentElement).appendChild(script);
+  })();
+
   let cardContainer = null;
   let isVisible = false;
 
@@ -31,7 +51,12 @@
   async function loadCardHTMLFromTemplate() {
     try {
       const url = asset("assets/card.html");
-      let html = await (await fetch(url)).text();
+      console.log("[Tab Cleaner] Loading card.html from:", url);
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
+      }
+      let html = await response.text();
       const map = {
         DRAGGABLE: asset('static/img/draggable-2.svg'),
         VECTOR6: asset('static/img/vector-6.svg'),
@@ -216,7 +241,7 @@
         .details-overlay {
           position: absolute;
           left: 0;
-          top: 0;
+          top: 5px;
           width: 268px;
           height: 268px;
           z-index: 1000;
@@ -273,12 +298,14 @@
     const homeBtn = shadow.getElementById('homeBtn');
     const cleanBtn = shadow.getElementById('cleanBtn');
     const detailsBtn = shadow.getElementById('detailsBtn');
+    const windowButton = shadow.querySelector('.window-button');
     const dragHandle = shadow.querySelector('.draggable') || card;
 
     // 确保所有交互元素可点击，但不改变其原有定位
-    [card, homeBtn, cleanBtn, detailsBtn].forEach(el => {
+    [card, homeBtn, cleanBtn, detailsBtn, windowButton].forEach(el => {
       if (el) {
         el.style.pointerEvents = 'auto';
+        el.style.cursor = 'pointer';
       }
     });
     
@@ -304,12 +331,24 @@
           const pt = e.touches ? e.touches[0] : e;
           dragging = true;
           document.body.style.userSelect = 'none';
+          
+          // 获取当前实际位置（考虑 right/top 或 left/top）
+          const rect = container.getBoundingClientRect();
+          const currentLeft = rect.left + window.scrollX;
+          const currentTop = rect.top + window.scrollY;
+          
+          // 统一使用 left/top 定位
           container.style.right = 'auto';
           container.style.bottom = 'auto';
-          origLeft = parsePx(container.style.left, container.getBoundingClientRect().left + window.scrollX);
-          origTop  = parsePx(container.style.top,  container.getBoundingClientRect().top + window.scrollY);
-          startX = pt.clientX; startY = pt.clientY;
-          e.preventDefault(); e.stopPropagation();
+          container.style.left = `${currentLeft}px`;
+          container.style.top = `${currentTop}px`;
+          
+          origLeft = currentLeft;
+          origTop = currentTop;
+          startX = pt.clientX; 
+          startY = pt.clientY;
+          e.preventDefault(); 
+          e.stopPropagation();
           window.addEventListener('mousemove', onMove, { passive:false });
           window.addEventListener('touchmove', onMove, { passive:false });
           window.addEventListener('mouseup', onUp, { passive:true });
@@ -341,20 +380,40 @@
     let detailsVisible = false;
     const detailsOverlay = shadow.getElementById('detailsOverlay');
 
-    closeBtn.addEventListener("click", hideCard);
-    homeBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "home" }));
-    cleanBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "clean" }));
-    detailsBtn.addEventListener("click", () => {
-      // 切换详情图片显示/隐藏
-      detailsVisible = !detailsVisible;
-      if (detailsOverlay) {
-        detailsOverlay.style.display = detailsVisible ? 'block' : 'none';
-      }
-      chrome.runtime.sendMessage({ action: "details" });
-    });
+    if (closeBtn) closeBtn.addEventListener("click", hideCard);
+    if (homeBtn) homeBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "home" }));
+    if (cleanBtn) cleanBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "clean" }));
+    if (detailsBtn) {
+      detailsBtn.addEventListener("click", () => {
+        // 切换详情图片显示/隐藏
+        detailsVisible = !detailsVisible;
+        if (detailsOverlay) {
+          detailsOverlay.style.display = detailsVisible ? 'block' : 'none';
+        }
+        chrome.runtime.sendMessage({ action: "details" });
+      });
+    }
+    // window-button 点击事件：显示/隐藏宠物
+    if (windowButton) {
+      windowButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        console.log("[Tab Cleaner] Window button clicked, sending message to background...");
+        
+        // ✅ 发送消息给 background script（content script 不能使用 chrome.tabs）
+        chrome.runtime.sendMessage({ action: "toggle-pet" }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error("[Tab Cleaner] Failed to send message:", chrome.runtime.lastError);
+          } else {
+            console.log("[Tab Cleaner] Pet toggle response:", response);
+          }
+        });
+      });
+    }
 
     document.body.appendChild(cardContainer);
-    requestAnimationFrame(() => card.classList.add("visible"));
+    if (card) {
+      requestAnimationFrame(() => card.classList.add("visible"));
+    }
   }
 
   async function showCard() {
