@@ -16,15 +16,15 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
   const svgRef = useRef(null);
 
   // 从 localStorage 加载数据
+  // 注意：刷新页面时清空绘画历史，只保留文字元素
   useEffect(() => {
     try {
-      const savedDrawPaths = localStorage.getItem('canvas_draw_paths');
+      // 清空绘画历史（刷新页面时）
+      localStorage.removeItem('canvas_draw_paths');
+      setDrawPaths([]);
+      
+      // 保留文字元素（如果需要也清空文字，可以取消注释下面两行）
       const savedTextElements = localStorage.getItem('canvas_text_elements');
-      
-      if (savedDrawPaths) {
-        setDrawPaths(JSON.parse(savedDrawPaths));
-      }
-      
       if (savedTextElements) {
         setTextElements(JSON.parse(savedTextElements));
       }
@@ -54,31 +54,47 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
   // 绘画工具
   const handleDrawStart = (e) => {
     if (activeTool !== 'draw') return;
+    e.preventDefault();
+    e.stopPropagation();
     setIsDrawing(true);
     const rect = canvas?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     setCurrentDrawPath([{ x, y }]);
+    console.log('[Draw] Start drawing at:', x, y);
   };
 
   const handleDrawMove = (e) => {
     if (activeTool !== 'draw' || !isDrawing) return;
+    e.preventDefault();
     const rect = canvas?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    setCurrentDrawPath(prev => [...prev, { x, y }]);
+    setCurrentDrawPath(prev => {
+      const newPath = [...prev, { x, y }];
+      console.log('[Draw] Path length:', newPath.length);
+      return newPath;
+    });
   };
 
   const handleDrawEnd = () => {
-    if (activeTool === 'draw' && isDrawing) {
+    if (activeTool === 'draw') {
       setIsDrawing(false);
-      // 保存绘画路径
-      if (currentDrawPath.length > 1) {
-        setDrawPaths(prev => [...prev, [...currentDrawPath]]);
-      }
-      setCurrentDrawPath([]);
+      // 保存绘画路径 - 使用函数式更新确保获取最新值
+      setCurrentDrawPath(currentPath => {
+        if (currentPath && currentPath.length > 1) {
+          const pathToSave = [...currentPath];
+          console.log('[Draw] Saving path with', pathToSave.length, 'points', pathToSave);
+          setDrawPaths(prev => {
+            const newPaths = [...prev, pathToSave];
+            console.log('[Draw] Total paths after save:', newPaths.length);
+            return newPaths;
+          });
+        }
+        return []; // 清空当前路径
+      });
     }
   };
 
@@ -86,6 +102,7 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
   const handleLassoStart = (e) => {
     if (activeTool !== 'lasso') return;
     e.preventDefault();
+    e.stopPropagation();
     setIsLassoActive(true);
     const rect = canvas?.getBoundingClientRect();
     if (!rect) return;
@@ -93,6 +110,7 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
     const y = e.clientY - rect.top;
     // 初始化路径，从第一个点开始
     setLassoPath([{ x, y }]);
+    console.log('[Lasso] Start drawing at:', x, y);
   };
 
   const handleLassoMove = (e) => {
@@ -103,22 +121,37 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     // 自由绘制：持续添加点形成路径
-    setLassoPath(prev => [...prev, { x, y }]);
+    setLassoPath(prev => {
+      const newPath = [...prev, { x, y }];
+      // 每 10 个点记录一次日志，避免日志过多
+      if (newPath.length % 10 === 0) {
+        console.log('[Lasso] Path length:', newPath.length);
+      }
+      return newPath;
+    });
   };
 
   const handleLassoEnd = () => {
     if (activeTool === 'lasso' && isLassoActive) {
+      // 使用函数式更新获取最新的 lassoPath
+      setLassoPath(currentPath => {
+        // 只在松开鼠标时检测并选中图片
+        if (currentPath && currentPath.length > 2 && onLassoSelect) {
+          // 闭合路径（连接起点和终点）
+          const closedPath = [...currentPath, currentPath[0]];
+          console.log('[Lasso] Selecting with path:', closedPath.length, 'points');
+          // 立即调用选择回调
+          onLassoSelect(closedPath);
+        } else {
+          console.log('[Lasso] Path too short or no callback:', currentPath?.length, !!onLassoSelect);
+        }
+        // 清空路径（延迟一下让用户看到最终结果）
+        setTimeout(() => {
+          setLassoPath([]);
+        }, 100);
+        return currentPath; // 先保留路径，让用户看到最终结果
+      });
       setIsLassoActive(false);
-      // 只在松开鼠标时检测并选中图片
-      if (lassoPath.length > 2 && onLassoSelect) {
-        // 闭合路径（连接起点和终点）
-        const closedPath = [...lassoPath, lassoPath[0]];
-        onLassoSelect(closedPath);
-      }
-      // 清空路径（延迟一下让用户看到最终结果）
-      setTimeout(() => {
-        setLassoPath([]);
-      }, 100);
     }
   };
 
@@ -172,9 +205,13 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
       if (activeTool === 'lasso' && isLassoActive) handleLassoMove(e);
     };
 
-    const handleMouseUp = () => {
-      if (activeTool === 'draw' && isDrawing) handleDrawEnd();
-      if (activeTool === 'lasso' && isLassoActive) handleLassoEnd();
+    const handleMouseUp = (e) => {
+      if (activeTool === 'draw' && isDrawing) {
+        handleDrawEnd();
+      }
+      if (activeTool === 'lasso' && isLassoActive) {
+        handleLassoEnd();
+      }
     };
 
     canvas.addEventListener('mousedown', handleMouseDown);
@@ -188,7 +225,7 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [activeTool, isDrawing, isLassoActive, canvas, lassoPath, onLassoSelect]);
+  }, [activeTool, isDrawing, isLassoActive, canvas]);
 
   // 绘制 SVG 路径
   const getPathString = (path) => {
@@ -201,6 +238,7 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
   return (
     <>
       {/* SVG 层用于绘制路径 - 相对于 canvas 定位 */}
+      {/* 注意：SVG 本身不接收事件，只用于显示。事件由 canvas 处理 */}
       <svg
         ref={svgRef}
         className="canvas-tools-overlay"
@@ -210,24 +248,28 @@ export const CanvasTools = ({ canvasRef, activeTool, onLassoSelect, selectedIds 
           left: 0,
           width: '100%',
           height: '100%',
-          pointerEvents: activeTool === 'draw' || activeTool === 'lasso' ? 'auto' : 'none',
+          pointerEvents: 'none', // SVG 不阻挡事件，让底层元素可以交互
           zIndex: 50,
           overflow: 'visible',
         }}
       >
         {/* 已保存的绘画路径 */}
-        {drawPaths.map((path, index) => (
-          <path
-            key={`draw-${index}`}
-            d={getPathString(path)}
-            stroke="#61caff"
-            strokeWidth="8"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            pointerEvents="none"
-          />
-        ))}
+        {drawPaths.length > 0 && drawPaths.map((path, index) => {
+          const pathString = getPathString(path);
+          console.log(`[Draw] Rendering saved path ${index}:`, pathString.substring(0, 50));
+          return (
+            <path
+              key={`draw-${index}`}
+              d={pathString}
+              stroke="#61caff"
+              strokeWidth="8"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              pointerEvents="none"
+            />
+          );
+        })}
         
         {/* 当前正在绘制的路径 */}
         {activeTool === 'draw' && currentDrawPath.length > 1 && (
