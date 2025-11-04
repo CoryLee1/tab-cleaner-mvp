@@ -10,14 +10,33 @@ export default defineConfig({
   build: {
     outDir: "dist",
     rollupOptions: {
-      // 单一占位入口，避免在 dist 里出现无关页面
       input: {
         blank: resolve(__dirname, "public/blank.html"),
+        personalspace: resolve(__dirname, "personalspace.html"),
       },
       output: {
         entryFileNames: "assets/[name].js",
         chunkFileNames: "assets/[name]-[hash].js",
-        assetFileNames: "assets/[name].[ext]",
+        assetFileNames: (assetInfo) => {
+          // 保持图片资源在 static/img/ 目录
+          const ext = assetInfo.name ? assetInfo.name.split('.').pop() : '';
+          if (['png', 'jpg', 'jpeg', 'gif', 'svg'].includes(ext)) {
+            const name = assetInfo.name.replace(/^.*[\\/]/, '');
+            // 检查是否是个人空间的图片资源
+            if (name.includes('clipboard') || name.includes('image-') || name.includes('vector') || 
+                name.includes('union') || name.includes('pinterest') || name.includes('basket') ||
+                name.includes('aha') || name.includes('live') || name.includes('loriann') ||
+                name.includes('roses') || name.includes('ucev') || name.includes('a-1') ||
+                name.includes('1-2') || name.includes('1-3') || name.includes('1-4') ||
+                name.includes('viewbuttons') || name.includes('lasso') || name.includes('draw') ||
+                name.includes('text') || name.includes('last-move') || name.includes('next-move') ||
+                name.includes('ai-clustering') || name.includes('3.svg') || name.includes('4.svg') ||
+                name.includes('5.svg') || name.includes('1.svg')) {
+              return `static/img/${name}`;
+            }
+          }
+          return "assets/[name].[ext]";
+        },
       },
     },
   },

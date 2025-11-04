@@ -134,6 +134,16 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     return true;
   }
   
+  // 处理打开个人空间消息
+  if (req.action === "open-personalspace") {
+    console.log("[Tab Cleaner Background] Opening personal space...");
+    chrome.tabs.create({
+      url: chrome.runtime.getURL("personalspace.html")
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+  
   // 处理其他消息类型
   return false;
 });

@@ -1,0 +1,1 @@
+export { PersonalSpace } from "./PersonalSpace";

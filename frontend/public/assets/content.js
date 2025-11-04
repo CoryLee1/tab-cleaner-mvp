@@ -381,7 +381,18 @@
     const detailsOverlay = shadow.getElementById('detailsOverlay');
 
     if (closeBtn) closeBtn.addEventListener("click", hideCard);
-    if (homeBtn) homeBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "home" }));
+    if (homeBtn) {
+      homeBtn.addEventListener("click", () => {
+        // 打开个人空间页面
+        chrome.runtime.sendMessage({ action: "open-personalspace" }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error("[Tab Cleaner] Failed to open personal space:", chrome.runtime.lastError);
+          } else {
+            console.log("[Tab Cleaner] Personal space opened");
+          }
+        });
+      });
+    }
     if (cleanBtn) cleanBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "clean" }));
     if (detailsBtn) {
       detailsBtn.addEventListener("click", () => {
