@@ -85,6 +85,132 @@
           z-index: 10000 !important;
           pointer-events: auto !important;
         }
+        /* Tooltip 样式 */
+        .button-wrapper, .window-button-wrapper {
+          position: relative;
+          display: inline-block;
+        }
+        .tooltip {
+          position: absolute;
+          top: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          margin-top: 8px;
+          padding: 6px 12px;
+          background-color: #000;
+          color: #fff;
+          font-size: 12px;
+          white-space: nowrap;
+          border-radius: 4px;
+          opacity: 0;
+          visibility: hidden;
+          transition: opacity 0.2s, visibility 0.2s;
+          pointer-events: none;
+          z-index: 10001;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        /* Tooltip 箭头（向上指向按钮） */
+        .tooltip::after {
+          content: '';
+          position: absolute;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          border: 6px solid transparent;
+          border-bottom-color: #000;
+        }
+        /* Hover 时显示 tooltip */
+        .button-wrapper:hover .tooltip,
+        .window-button-wrapper:hover .tooltip {
+          opacity: 1;
+          visibility: visible;
+        }
+        /* 确保按钮在 wrapper 内正确定位，不影响原有绝对定位 */
+        .buttons .button-wrapper {
+          position: absolute;
+          /* wrapper 包含按钮和 tooltip 的空间 */
+        }
+        .buttons .button-wrapper .home-button,
+        .buttons .button-wrapper .clean-button,
+        .buttons .button-wrapper .details-button {
+          position: absolute;
+          left: 0;
+          top: 0;
+          /* 保持原有尺寸 */
+        }
+        .buttons .home-wrapper .home-button {
+          width: 88px;
+          height: 99px;
+        }
+        .buttons .clean-wrapper .clean-button {
+          width: 96px;
+          height: 135px;
+        }
+        .buttons .details-wrapper .details-button {
+          width: 88px;
+          height: 99px;
+        }
+        /* 调整 wrapper 位置以匹配原按钮位置 */
+        .buttons .home-wrapper {
+          left: 160px;
+          top: 19px;
+        }
+        .buttons .clean-wrapper {
+          left: calc(50% - 49px);
+          top: 0;
+        }
+        .buttons .details-wrapper {
+          left: -10px;
+          top: 18px;
+        }
+        /* 底部三个按钮的 tooltip 定位：相对于按钮底部居中 */
+        .buttons .button-wrapper .tooltip {
+          top: auto;
+          bottom: auto;
+          /* 定位在按钮底部下方 */
+          margin-top: 0;
+          margin-bottom: 0;
+        }
+        /* 根据按钮视觉底部（不含阴影）定位 tooltip */
+        /* 按钮图片包含阴影，所以需要基于按钮的可视区域来定位 */
+        .buttons .home-wrapper .tooltip {
+          top: 65px; /* 调高一点：减小 top 值 */
+          left: calc(50% + 43px); /* 往右调：向右偏移 43px */
+          transform: translateX(-50%);
+        }
+        .buttons .clean-wrapper .tooltip {
+          top: 85px; /* clean-button tooltip 位置 */
+          left: calc(50% + 45px); /* 往右调：向右偏移 45px */
+          transform: translateX(-50%);
+        }
+        .buttons .details-wrapper .tooltip {
+          top: 65px; /* 调高一点：减小 top 值 */
+          left: calc(50% + 43px); /* 往右调：向右偏移 43px */
+          transform: translateX(-50%);
+        }
+        /* window-button-wrapper 定位，完全不影响原有 window-button 的定位 */
+        .window-button-wrapper {
+          position: absolute;
+          left: 32px;
+          top: 49px;
+          width: 268px;
+          height: 268px;
+          /* wrapper 不影响内部元素的样式，保持原有 CSS 定义的 window-button 样式 */
+        }
+        /* 确保 wrapper 内的 window-button 保持原有样式，只调整定位为相对于 wrapper */
+        .window-button-wrapper .window-button {
+          position: absolute;
+          left: 0 !important;
+          top: 0 !important;
+          width: 268px !important;
+          height: 268px !important;
+        }
+        /* 确保 window-button 内的子元素保持原有样式 */
+        .window-button-wrapper .window-button .image {
+          height: 100%;
+          width: 100%;
+          position: relative;
+        }
       </style>
     `;
   }
