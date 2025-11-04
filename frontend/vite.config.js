@@ -10,11 +10,9 @@ export default defineConfig({
   build: {
     outDir: "dist",
     rollupOptions: {
+      // 单一占位入口，避免在 dist 里出现无关页面
       input: {
-        popup: resolve(__dirname, "src/popup/index.jsx"),
-        sidepanel: resolve(__dirname, "src/sidepanel/index.jsx"),
-        background: resolve(__dirname, "src/background/index.js"),
-        content: resolve(__dirname, "src/screens/Card/content.js"),
+        blank: resolve(__dirname, "public/blank.html"),
       },
       output: {
         entryFileNames: "assets/[name].js",

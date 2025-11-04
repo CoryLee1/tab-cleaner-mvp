@@ -24,6 +24,7 @@
       "resources": [
         "assets/*.js",
         "assets/*.css",
+        "assets/card.html",
         "static/img/*"
       ],
       "matches": ["<all_urls>"]
