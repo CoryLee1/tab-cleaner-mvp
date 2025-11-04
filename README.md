@@ -9,6 +9,8 @@
 - 📍 **智能定位**：卡片默认出现在浏览器右上角，插件图标下方
 - 🎯 **交互按钮**：三个功能按钮（Home、Clean、Details）和关闭按钮
 - 🖼️ **完整背景**：支持背景图片和所有装饰元素
+- 📊 **详情显示**：点击 Details 按钮可显示/隐藏插件状态信息（开启时间等）
+- 💡 **Tooltip 提示**：所有按钮都有悬停提示，显示功能说明
 
 ## 目录结构
 
@@ -46,6 +48,7 @@ tab-cleaner-mvp/
    │   │       ├─ home-button-2.png    # 首页按钮
    │   │       ├─ clean-button.png     # 清理按钮
    │   │       ├─ details-button.svg   # 详情按钮
+   │   │       ├─ 洗衣机详情.png        # 详情显示图片（插件状态信息）
    │   │       └─ vector-*.svg          # 装饰向量图
    │   ├─ manifest.json        # Chrome 扩展清单
    │   ├─ popup.html           # Popup 页面（备用）

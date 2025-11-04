@@ -39,8 +39,9 @@
         HOME: asset('static/img/home-button-2.png'),
         CLEAN: asset('static/img/clean-button.png'),
         DETAILS: asset('static/img/details-button.svg'),
+        DETAILS_IMAGE: asset('static/img/洗衣机详情.png'),
       };
-      html = html.replace(/\{\{(DRAGGABLE|VECTOR6|WINDOW|HOME|CLEAN|DETAILS)\}\}/g, (_m, k) => map[k] || "");
+      html = html.replace(/\{\{(DRAGGABLE|VECTOR6|WINDOW|HOME|CLEAN|DETAILS|DETAILS_IMAGE)\}\}/g, (_m, k) => map[k] || "");
       return html;
     } catch (e) {
       console.error("Failed to load card.html template:", e);
@@ -180,7 +181,7 @@
         }
         .buttons .clean-wrapper .tooltip {
           top: 85px; /* clean-button tooltip 位置 */
-          left: calc(50% + 45px); /* 往右调：向右偏移 45px */
+          left: calc(50% + 48px); /* 往右调：向右偏移 48px */
           transform: translateX(-50%);
         }
         .buttons .details-wrapper .tooltip {
@@ -210,6 +211,23 @@
           height: 100%;
           width: 100%;
           position: relative;
+        }
+        /* 详情图片覆盖层样式 */
+        .details-overlay {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 268px;
+          height: 268px;
+          z-index: 1000;
+          pointer-events: none;
+          display: none;
+        }
+        .details-overlay .details-image {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          border-radius: 50%;
         }
       </style>
     `;
@@ -319,10 +337,21 @@
     }
     enableDrag(dragHandle, cardContainer);
 
+    // 详情图片显示/隐藏状态
+    let detailsVisible = false;
+    const detailsOverlay = shadow.getElementById('detailsOverlay');
+
     closeBtn.addEventListener("click", hideCard);
     homeBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "home" }));
     cleanBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "clean" }));
-    detailsBtn.addEventListener("click", () => chrome.runtime.sendMessage({ action: "details" }));
+    detailsBtn.addEventListener("click", () => {
+      // 切换详情图片显示/隐藏
+      detailsVisible = !detailsVisible;
+      if (detailsOverlay) {
+        detailsOverlay.style.display = detailsVisible ? 'block' : 'none';
+      }
+      chrome.runtime.sendMessage({ action: "details" });
+    });
 
     document.body.appendChild(cardContainer);
     requestAnimationFrame(() => card.classList.add("visible"));
