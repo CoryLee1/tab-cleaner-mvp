@@ -1,1 +1,0 @@
-export { DesktopPetMain } from "./DesktopPetMain";
