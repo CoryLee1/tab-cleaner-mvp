@@ -7,7 +7,6 @@ import { CanvasTools } from "./CanvasTools";
 import "./style.css";
 
 export const PersonalSpace = () => {
-  // 管理图片位置和选中状态
   const [images, setImages] = useState(() =>
     initialImages.map(img => ({
       ...img,
@@ -51,7 +50,7 @@ export const PersonalSpace = () => {
   const handleLassoSelect = (lassoPath) => {
     if (!lassoPath || lassoPath.length < 3) return;
     
-    const selected = new Set(selectedIds); // 保留已选中的
+    const selected = new Set(selectedIds);
     images.forEach(img => {
       // 检查图片是否与套索路径相交
       const imgRect = {
@@ -122,8 +121,8 @@ export const PersonalSpace = () => {
     // 快速检查：线段的两端都在矩形外的同一侧
     if ((p1.x < rect.left && p2.x < rect.left) ||
         (p1.x > rect.right && p2.x > rect.right) ||
-        (p1.y < rect.top && p2.y < rect.top) ||
-        (p1.y > rect.bottom && p2.y > rect.bottom)) {
+        (p1.y < rect.top && p2.y > rect.bottom) ||
+        (p1.y > rect.bottom && p2.y < rect.top)) {
       return false;
     }
     
@@ -145,16 +144,16 @@ export const PersonalSpace = () => {
     return ccw(p1, p3, p4) !== ccw(p2, p3, p4) && ccw(p1, p2, p3) !== ccw(p1, p2, p4);
   };
 
-  // 根据工具设置光标样式（使用 SVG 图标）
+  // 根据工具设置光标样式
   const getCanvasCursor = () => {
     switch (activeTool) {
       case 'draw': {
         const drawIconUrl = getImageUrl('draw-button-1.svg');
-        return `url(${drawIconUrl}) 8 8, crosshair`; // 8 8 是热点位置（图标中心）
+        return `url(${drawIconUrl}) 8 8, crosshair`;
       }
       case 'lasso': {
         const lassoIconUrl = getImageUrl('lasso-button-1.svg');
-        return `url(${lassoIconUrl}) 10 10, crosshair`; // 10 10 是热点位置
+        return `url(${lassoIconUrl}) 10 10, crosshair`;
       }
       case 'text':
         return 'text';
@@ -206,13 +205,11 @@ export const PersonalSpace = () => {
       <div className="space-function">
         <div className="add-new-session">
           <img className="image-10" alt="Image" src={getImageUrl("3.svg")} />
-
-          <div className="text-wrapper-16">加新洗衣筐</div>
+          <div className="text-wrapper-16">新增洗衣篮</div>
         </div>
 
         <div className="share">
           <img className="image-11" alt="Image" src={getImageUrl("4.svg")} />
-
           <div className="text-wrapper-17">分享</div>
         </div>
       </div>
@@ -223,13 +220,11 @@ export const PersonalSpace = () => {
           alt="Basket icon"
           src={getImageUrl("basket-icon-1.png")}
         />
-
         <div className="text-wrapper-18">我的收藏</div>
       </div>
 
       <div className="search-bar">
         <img className="image-12" alt="Image" src={getImageUrl("5.svg")} />
-
         <div className="text-wrapper-19">大促物料参考</div>
       </div>
 
@@ -250,7 +245,7 @@ export const PersonalSpace = () => {
         </div>
 
         <div className="add-tag">
-          <div className="text-wrapper-22"></div>
+          <div className="text-wrapper-22">➕</div>
         </div>
 
         <div className="upload">
@@ -278,7 +273,7 @@ export const PersonalSpace = () => {
             className="lasso-button"
             alt="Lasso button"
             src={getImageUrl("lasso-button-1.svg")}
-            tooltip="套索工具"
+            tooltip="套索工具 - 圈选图片"
             isActive={activeTool === 'lasso'}
             onClick={() => setActiveTool(activeTool === 'lasso' ? null : 'lasso')}
           />
@@ -287,7 +282,7 @@ export const PersonalSpace = () => {
             className="draw-button"
             alt="Draw button"
             src={getImageUrl("draw-button-1.svg")}
-            tooltip="绘画工具"
+            tooltip="绘画工具 - 自由绘画"
             isActive={activeTool === 'draw'}
             onClick={() => setActiveTool(activeTool === 'draw' ? null : 'draw')}
           />
@@ -296,7 +291,7 @@ export const PersonalSpace = () => {
             className="text-button"
             alt="Text button"
             src={getImageUrl("text-button-1.svg")}
-            tooltip="文字工具"
+            tooltip="文字工具 - 添加文本"
             isActive={activeTool === 'text'}
             onClick={() => setActiveTool(activeTool === 'text' ? null : 'text')}
           />
@@ -360,9 +355,9 @@ const ToolButton = ({ className, alt, src, tooltip, isActive, onClick }) => {
           className="tool-tooltip"
           style={{
             position: 'absolute',
-            bottom: '-30px',        // 调整垂直位置：负数向上，正数向下
-            left: '50%',            // 调整水平位置：'50%' 居中，或 '0' 左对齐，'100%' 右对齐
-            transform: 'translateX(-50%)', // 水平居中，或 'translate(-50%, -100%)' 完全居中
+            bottom: '-30px',
+            left: '50%',
+            transform: 'translateX(-50%)',
             backgroundColor: 'rgba(0, 0, 0, 0.8)',
             color: '#fff',
             padding: '4px 8px',
@@ -379,3 +374,5 @@ const ToolButton = ({ className, alt, src, tooltip, isActive, onClick }) => {
     </div>
   );
 };
+
+export default PersonalSpace;

@@ -914,6 +914,18 @@
   position: absolute;
   top: 11px;
   width: 118px;
+  gap: 0;
+}
+
+.personal-space .tool-button-wrapper {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.personal-space .tool-button-wrapper.active img {
+  opacity: 1 !important;
+  filter: none !important;
 }
 
 .personal-space .lasso-button {

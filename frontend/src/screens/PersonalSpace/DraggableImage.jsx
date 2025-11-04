@@ -31,6 +31,13 @@ export const DraggableImage = ({
 
   // 鼠标按下
   const handleMouseDown = (e) => {
+    // 如果工具激活，不处理图片拖拽
+    const canvas = imgRef.current?.closest('.canvas');
+    if (canvas && canvas.style.cursor !== 'default') {
+      // 有工具激活时，不处理图片拖拽
+      return;
+    }
+    
     // 如果点击的是图片本身，开始拖拽
     if (e.button !== 0) return; // 只处理左键
     
@@ -47,6 +54,7 @@ export const DraggableImage = ({
     setDragOffset({ x: offsetX, y: offsetY });
     setIsDragging(true);
     e.preventDefault();
+    e.stopPropagation(); // 阻止事件冒泡
   };
 
   // 鼠标移动
