@@ -5,10 +5,33 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "aiofiles>=25.1.0",
+    # ===== Web 框架相关 =====
+    # FastAPI: 现代、快速的 Web 框架，用于构建 API
     "fastapi>=0.120.3",
-    "sqlalchemy>=2.0.44",
+    # Uvicorn: ASGI 服务器，用于运行 FastAPI 应用
     "uvicorn[standard]>=0.38.0",
+    
+    # ===== 数据库相关 =====
+    # SQLAlchemy: ORM 框架，用于数据库操作
+    "sqlalchemy>=2.0.44",
+    
+    # ===== HTTP 客户端 =====
+    # HTTPX: 异步 HTTP 客户端，用于发送 HTTP 请求
     "httpx>=0.27.0",
+    
+    # ===== 网页解析 =====
+    # BeautifulSoup4: HTML/XML 解析库，用于抓取网页内容
     "beautifulsoup4>=4.12.0",
+    
+    # ===== AI 服务 =====
+    # Dashscope: 阿里云通义千问 API SDK，用于 AI 分析功能
+    "dashscope>=1.17.0",
+    
+    # ===== 文件操作 =====
+    # Aiofiles: 异步文件操作库
+    "aiofiles>=25.1.0",
+    
+    # ===== 环境配置 =====
+    # Python-dotenv: 从 .env 文件加载环境变量
+    "python-dotenv>=1.0.0",
 ]

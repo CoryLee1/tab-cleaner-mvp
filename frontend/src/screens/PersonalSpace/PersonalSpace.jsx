@@ -5,6 +5,7 @@ import { DraggableImage } from "./DraggableImage";
 import { initialImages } from "./imageData";
 import { CanvasTools } from "./CanvasTools";
 import { OpenGraphCard } from "./OpenGraphCard";
+import { SelectionPanel } from "./SelectionPanel";
 import "./style.css";
 
 export const PersonalSpace = () => {
@@ -37,6 +38,9 @@ export const PersonalSpace = () => {
 
   // AI 聚类面板显示状态
   const [showAIClusteringPanel, setShowAIClusteringPanel] = useState(false);
+
+  // 选中分组名称
+  const [selectedGroupName, setSelectedGroupName] = useState("未命名分组");
 
   // 从 storage 加载 OpenGraph 数据
   useEffect(() => {
@@ -420,16 +424,28 @@ export const PersonalSpace = () => {
           setImages(action.prevImages);
         }
         break;
-      case 'opengraph-move':
-        // 恢复 OpenGraph 图片位置
-        if (action.ogId && action.prevX !== undefined && action.prevY !== undefined) {
-          setOpengraphData(prev =>
-            prev.map(og =>
-              og.id === action.ogId ? { ...og, x: action.prevX, y: action.prevY } : og
-            )
-          );
-        }
-        break;
+          case 'opengraph-move':
+            // 恢复 OpenGraph 图片位置
+            if (action.ogId && action.prevX !== undefined && action.prevY !== undefined) {
+              setOpengraphData(prev =>
+                prev.map(og =>
+                  og.id === action.ogId ? { ...og, x: action.prevX, y: action.prevY } : og
+                )
+              );
+            }
+            break;
+          case 'image-delete':
+            // 恢复删除的图片
+            if (action.prevImages && Array.isArray(action.prevImages)) {
+              setImages(action.prevImages);
+            }
+            break;
+          case 'opengraph-delete':
+            // 恢复删除的 OpenGraph 图片
+            if (action.prevOG && Array.isArray(action.prevOG)) {
+              setOpengraphData(action.prevOG);
+            }
+            break;
     }
     
     setHistoryIndex(prev => prev - 1);
@@ -484,16 +500,28 @@ export const PersonalSpace = () => {
           img.id === action.imageId ? { ...img, x: action.x, y: action.y } : img
         ));
         break;
-      case 'opengraph-move':
-        // 恢复 OpenGraph 图片位置
-        if (action.ogId && action.x !== undefined && action.y !== undefined) {
-          setOpengraphData(prev =>
-            prev.map(og =>
-              og.id === action.ogId ? { ...og, x: action.x, y: action.y } : og
-            )
-          );
-        }
-        break;
+          case 'opengraph-move':
+            // 恢复 OpenGraph 图片位置
+            if (action.ogId && action.x !== undefined && action.y !== undefined) {
+              setOpengraphData(prev =>
+                prev.map(og =>
+                  og.id === action.ogId ? { ...og, x: action.x, y: action.y } : og
+                )
+              );
+            }
+            break;
+          case 'image-delete':
+            // 重做删除（再次删除）
+            if (action.deletedIds && Array.isArray(action.deletedIds)) {
+              setImages(prev => prev.filter(img => !action.deletedIds.includes(img.id)));
+            }
+            break;
+          case 'opengraph-delete':
+            // 重做删除（再次删除）
+            if (action.deletedIds && Array.isArray(action.deletedIds)) {
+              setOpengraphData(prev => prev.filter(og => !action.deletedIds.includes(og.id)));
+            }
+            break;
     }
     
     setHistoryIndex(nextIndex);
@@ -517,13 +545,41 @@ export const PersonalSpace = () => {
     }
   };
 
-  return (
-    <div className="personal-space">
-      <div 
-        className="canvas" 
-        ref={canvasRef}
-        style={{ cursor: getCanvasCursor() }}
-      >
+      // 处理点击空白处取消选择
+      const handleCanvasClick = (e) => {
+        // 如果有工具激活（套索、绘画、文字），不处理点击取消选择
+        // 因为工具需要处理自己的点击事件
+        if (activeTool) {
+          return;
+        }
+        
+        // 如果点击的是 canvas 本身（不是图片、工具按钮、文字元素等）
+        // 排除点击图片、工具按钮、文字元素、SVG 路径等
+        if (
+          e.target === canvasRef.current || 
+          (e.target.classList && e.target.classList.contains('canvas')) ||
+          (e.target.tagName === 'DIV' && e.target.classList.contains('canvas'))
+        ) {
+          // 确保不是点击了图片、按钮或其他元素
+          if (!e.target.closest('img') && 
+              !e.target.closest('.tool-button-wrapper') && 
+              !e.target.closest('.canvas-text-element') &&
+              !e.target.closest('input') &&
+              !e.target.closest('svg') &&
+              !e.target.closest('path')) {
+            setSelectedIds(new Set());
+          }
+        }
+      };
+
+      return (
+        <div className="personal-space">
+          <div 
+            className="canvas" 
+            ref={canvasRef}
+            style={{ cursor: getCanvasCursor() }}
+            onClick={handleCanvasClick}
+          >
         {/* 原有图片（仅在未加载 OpenGraph 时显示） */}
         {showOriginalImages && images.map(img => (
           <DraggableImage
@@ -742,16 +798,192 @@ export const PersonalSpace = () => {
         </div>
       </div>
 
-      {/* OpenGraph 卡片（点击图片后显示） */}
-      {selectedOG && (
-        <OpenGraphCard
-          data={selectedOG}
-          onClose={() => setSelectedOG(null)}
-        />
-      )}
-    </div>
-  );
-};
+          {/* OpenGraph 卡片（点击图片后显示） */}
+          {selectedOG && (
+            <OpenGraphCard
+              data={selectedOG}
+              onClose={() => setSelectedOG(null)}
+            />
+          )}
+
+          {/* 选中面板（有图片被选中时显示） */}
+          {selectedIds && selectedIds.size > 0 && (
+            <SelectionPanel
+              selectedCount={selectedIds.size}
+              groupName={selectedGroupName}
+              onDelete={() => {
+                console.log('[SelectionPanel] Delete clicked');
+                const selectedArray = Array.from(selectedIds);
+                
+                // 从画布移除图片
+                if (showOriginalImages) {
+                  // 移除原有图片
+                  setImages(prev => {
+                    const prevImages = [...prev];
+                    const newImages = prev.filter(img => !selectedIds.has(img.id));
+                    addToHistory({ 
+                      type: 'image-delete', 
+                      action: 'delete', 
+                      deletedIds: selectedArray,
+                      prevImages: prevImages
+                    });
+                    return newImages;
+                  });
+                } else {
+                  // 移除 OpenGraph 图片
+                  setOpengraphData(prev => {
+                    const prevOG = [...prev];
+                    const newOG = prev.filter(og => !selectedIds.has(og.id));
+                    addToHistory({ 
+                      type: 'opengraph-delete', 
+                      action: 'delete', 
+                      deletedIds: selectedArray,
+                      prevOG: prevOG
+                    });
+                    return newOG;
+                  });
+                }
+                
+                // 清空选中状态
+                setSelectedIds(new Set());
+              }}
+              onRename={(newName) => {
+                console.log('[SelectionPanel] Rename to:', newName);
+                setSelectedGroupName(newName);
+              }}
+              onOpen={() => {
+                console.log('[SelectionPanel] Open clicked');
+                // TODO: 实现打开选中图片对应的 URL
+                const selectedArray = Array.from(selectedIds);
+                selectedArray.forEach(id => {
+                  if (id.startsWith('og-')) {
+                    const og = opengraphData.find(item => item.id === id);
+                    if (og && og.url) {
+                      window.open(og.url, '_blank');
+                    }
+                  }
+                });
+              }}
+              onDownload={() => {
+                console.log('[SelectionPanel] Download clicked');
+                const selectedArray = Array.from(selectedIds);
+                const urlList = [];
+                
+                // 收集选中图片的 URL
+                selectedArray.forEach(id => {
+                  if (id.startsWith('og-')) {
+                    const og = opengraphData.find(item => item.id === id);
+                    if (og) {
+                      urlList.push({
+                        id: og.id,
+                        url: og.url || '',
+                        title: og.title || og.tab_title || '',
+                        description: og.description || '',
+                        image: og.image || '',
+                        site_name: og.site_name || '',
+                      });
+                    }
+                  } else {
+                    // 原有图片（如果有 URL 信息）
+                    const img = images.find(item => item.id === id);
+                    if (img) {
+                      urlList.push({
+                        id: img.id,
+                        url: img.url || '',
+                        title: img.alt || '',
+                        image: img.src || '',
+                      });
+                    }
+                  }
+                });
+                
+                // 生成 JSON 并下载
+                const jsonContent = JSON.stringify(urlList, null, 2);
+                const blob = new Blob([jsonContent], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `selected_urls_${Date.now()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              onAIInsight={async () => {
+                try {
+                  console.log('[SelectionPanel] AI Insight clicked');
+                  const selectedArray = Array.from(selectedIds);
+                  const opengraphItems = [];
+                  
+                  // 收集选中图片的 OpenGraph 数据
+                  selectedArray.forEach(id => {
+                    if (id.startsWith('og-')) {
+                      const og = opengraphData.find(item => item.id === id);
+                      if (og) {
+                        opengraphItems.push({
+                          url: og.url || '',
+                          title: og.title || og.tab_title || '',
+                          description: og.description || '',
+                          image: og.image || '',
+                          site_name: og.site_name || '',
+                        });
+                      }
+                    } else {
+                      // 原有图片（如果有 URL 信息）
+                      const img = images.find(item => item.id === id);
+                      if (img && img.url) {
+                        opengraphItems.push({
+                          url: img.url || '',
+                          title: img.alt || '',
+                          description: '',
+                          image: img.src || '',
+                          site_name: '',
+                        });
+                      }
+                    }
+                  });
+                  
+                  if (opengraphItems.length === 0) {
+                    alert('选中的图片没有可用的 URL 信息');
+                    return;
+                  }
+                  
+                  // 调用后端 AI 洞察 API
+                  const response = await fetch('http://localhost:8000/api/v1/ai/insight', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      opengraph_items: opengraphItems
+                    })
+                  });
+                  
+                  if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                  }
+                  
+                  const result = await response.json();
+                  
+                  if (result && result.ok && result.summary) {
+                    // 显示 AI 洞察结果（使用 alert，后续可以改为更优雅的 UI）
+                    const summaryText = result.summary || '无总结内容';
+                    alert('AI 洞察总结：\n\n' + summaryText);
+                  } else {
+                    const errorMsg = (result && result.error) ? result.error : '未知错误';
+                    alert('AI 洞察失败：' + errorMsg);
+                  }
+                } catch (error) {
+                  console.error('[SelectionPanel] AI Insight error:', error);
+                  const errorMessage = error && error.message ? error.message : '请求失败';
+                  alert('AI 洞察请求失败：' + errorMessage);
+                }
+              }}
+            />
+          )}
+        </div>
+      );
+    };
 
 /**
  * 工具按钮组件（带 tooltip）

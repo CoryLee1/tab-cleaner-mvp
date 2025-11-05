@@ -85,7 +85,7 @@ export const CanvasTools = ({
   const handleLassoStart = (e) => {
     if (activeTool !== 'lasso') return;
     e.preventDefault();
-    e.stopPropagation();
+    e.stopPropagation(); // 阻止事件冒泡到 canvas 的 onClick
     setIsLassoActive(true);
     const rect = canvas?.getBoundingClientRect();
     if (!rect) return;
@@ -99,6 +99,7 @@ export const CanvasTools = ({
   const handleLassoMove = (e) => {
     if (activeTool !== 'lasso' || !isLassoActive) return;
     e.preventDefault();
+    e.stopPropagation(); // 阻止事件冒泡
     const rect = canvas?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left;
@@ -114,8 +115,12 @@ export const CanvasTools = ({
     });
   };
 
-  const handleLassoEnd = () => {
+  const handleLassoEnd = (e) => {
     if (activeTool === 'lasso' && isLassoActive) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation(); // 阻止事件冒泡到 canvas 的 onClick
+      }
       // 使用函数式更新获取最新的 lassoPath
       setLassoPath(currentPath => {
         // 只在松开鼠标时检测并选中图片
@@ -227,7 +232,7 @@ export const CanvasTools = ({
         handleDrawEnd();
       }
       if (activeTool === 'lasso' && isLassoActive) {
-        handleLassoEnd();
+        handleLassoEnd(e);
       }
     };
 

@@ -27,6 +27,23 @@
     - **文字工具**：点击画布任意位置添加文字，支持中英文自动切换字体
     - **图片拖拽**：所有图片都可以拖动，选中后显示蓝色外发光
     - **刷新清空**：刷新页面时自动清空绘画历史（保留文字元素）
+    - **撤销/重做**：支持撤销和重做操作（图片移动、删除、选择、绘画、文字等）
+  - 🤖 **AI 洞察**：
+    - 使用通义千问（阿里云）分析选中的 OpenGraph 数据
+    - 智能识别图片为主平台（Pinterest、小红书、Arena 等）
+    - 生成不超过 150 字的综合总结
+    - 支持环境变量配置 API Key（.env）
+  - 📊 **选中面板**：
+    - 选中图片时在右侧显示操作面板
+    - 显示选中数量和分组名称（可编辑）
+    - 支持删除、命名分组、打开、下载链接、AI洞察等操作
+  - 🗑️ **删除功能**：从画布移除选中的图片（支持撤销/重做）
+  - 📥 **下载链接**：导出选中图片的 URL 列表为 JSON 文件
+  - 🔍 **OpenGraph 数据**：
+    - Clean Button 一键抓取所有打开标签的 OpenGraph 数据
+    - 以放射状布局在个人空间展示 OpenGraph 图片
+    - 点击图片显示完整的 OpenGraph 信息卡片
+    - OpenGraph 图片支持拖拽、选中、套索、绘画、文字等所有画布工具
 
 ## 目录结构
 
@@ -38,6 +55,10 @@ tab-cleaner-mvp/
 │     ├─ api/
 │     │  └─ __init__.py
 │     ├─ main.py              # FastAPI 应用入口
+│     ├─ opengraph.py          # OpenGraph 数据抓取模块
+│     ├─ ai_insight.py         # AI 洞察模块（调用通义千问）
+│     ├─ ai_prompts.py         # AI 提示词配置模块
+│     ├─ .env.example          # 环境变量配置模板
 │     ├─ pyproject.toml        # 依赖配置
 │     ├─ uv.lock              # 依赖锁定文件
 │     ├─ services/             # 业务逻辑服务
@@ -235,10 +256,47 @@ tab-cleaner-mvp/
 ## 前后端联调
 
 - 前端 API 端点：`http://localhost:8000/api/v1/...`
-- 当前后端仅实现 `/` 健康检查，需要补充以下路由：
-  - `POST /api/v1/sessions` - 创建会话
-  - `POST /api/v1/tabs` - 添加标签页
-  - `POST /api/v1/share` - 生成分享链接
+- 后端已实现以下路由：
+  - `GET /` - 健康检查
+  - `POST /api/v1/tabs/opengraph` - 批量抓取多个 tabs 的 OpenGraph 数据
+  - `POST /api/v1/ai/insight` - 使用通义千问分析 OpenGraph 数据并生成总结
+
+### 后端模块说明
+
+- **`opengraph.py`**：OpenGraph 数据抓取模块
+  - `fetch_opengraph(url)`: 抓取单个 URL 的 OpenGraph 数据
+  - `fetch_multiple_opengraph(urls)`: 并发抓取多个 URL 的 OpenGraph 数据
+  - 支持提取 title、description、image、site_name 等字段
+
+- **`ai_insight.py`**：AI 洞察模块
+  - `analyze_opengraph_data(opengraph_items)`: 使用通义千问分析 OpenGraph 数据并生成总结
+  - 调用 `dashscope.Generation.call()` API
+  - 返回总结文本（不超过 150 字）
+
+- **`ai_prompts.py`**：AI 提示词配置模块
+  - `get_system_prompt()`: 获取系统提示词
+  - `build_user_content_from_opengraph(opengraph_items)`: 从 OpenGraph 数据构建用户消息
+  - `build_messages(opengraph_items)`: 构建完整的消息列表（system + user）
+  - `is_image_focused_platform(url, site_name)`: 判断是否为图片为主的平台
+
+### 环境配置
+
+1. **配置 API Key**：
+   ```bash
+   cd backend/app
+   cp .env.example .env
+   # 编辑 .env，填入 DASHSCOPE_API_KEY
+   ```
+
+2. **安装依赖**：
+   ```bash
+   uv sync
+   ```
+
+3. **启动服务**：
+   ```bash
+   uv run uvicorn main:app --reload
+   ```
 
 ## 后续扩展
 
@@ -442,6 +500,26 @@ git push -u origin main
    - 可以使用 `cp -r public/static/img/* dist/static/img/` 手动同步
 
 ## 更新日志
+
+### v0.0.3
+- ✅ 实现 AI 洞察功能
+  - 集成通义千问（dashscope SDK）分析 OpenGraph 数据
+  - 智能识别图片为主平台（Pinterest、小红书、Arena 等）
+  - 生成不超过 150 字的综合总结
+  - 支持环境变量配置 API Key（.env）
+- ✅ 实现选中面板功能
+  - 选中图片时在右侧显示操作面板
+  - 显示选中数量和分组名称（可编辑）
+  - 支持删除、命名分组、打开、下载链接、AI洞察等操作
+- ✅ 实现 OpenGraph 数据展示
+  - Clean Button 一键抓取所有打开标签的 OpenGraph 数据
+  - 以放射状布局在个人空间展示 OpenGraph 图片
+  - 点击图片显示完整的 OpenGraph 信息卡片
+- ✅ 优化代码结构
+  - 将 AI 提示词配置抽离到独立的 `ai_prompts.py` 模块
+  - 改进错误处理和调试日志
+  - 修复套索工具不灵敏的问题
+  - 修复画笔工具崩溃问题
 
 ### v0.0.2
 - ✅ 实现画布工具功能
