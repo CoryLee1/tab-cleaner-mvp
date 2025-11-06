@@ -31,6 +31,14 @@ dependencies = [
     # Aiofiles: 异步文件操作库
     "aiofiles>=25.1.0",
     
+    # ===== 图片处理 =====
+    # Pillow: 图片处理库，用于图片缩放和压缩
+    "pillow>=10.0.0",
+    
+    # ===== 数值计算 =====
+    # NumPy: 数值计算库，用于向量相似度计算
+    "numpy>=1.24.0",
+    
     # ===== 环境配置 =====
     # Python-dotenv: 从 .env 文件加载环境变量
     "python-dotenv>=1.0.0",

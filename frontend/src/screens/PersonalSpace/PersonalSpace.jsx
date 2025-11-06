@@ -6,6 +6,7 @@ import { initialImages } from "./imageData";
 import { CanvasTools } from "./CanvasTools";
 import { OpenGraphCard } from "./OpenGraphCard";
 import { SelectionPanel } from "./SelectionPanel";
+import { generateEmbeddings, searchContent } from "../../shared/api";
 import "./style.css";
 
 export const PersonalSpace = () => {
@@ -26,6 +27,10 @@ export const PersonalSpace = () => {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [activeTool, setActiveTool] = useState(null); // 'draw' | 'lasso' | 'text' | null
   const canvasRef = useRef(null);
+  
+  // 画布缩放和平移状态
+  const [zoom, setZoom] = useState(1); // 缩放比例，1 = 100%
+  const [pan, setPan] = useState({ x: 0, y: 0 }); // 平移位置
 
   // 画布工具状态（由父组件管理，支持撤销/重做）
   const [drawPaths, setDrawPaths] = useState([]);
@@ -41,6 +46,12 @@ export const PersonalSpace = () => {
 
   // 选中分组名称
   const [selectedGroupName, setSelectedGroupName] = useState("未命名分组");
+
+  // 搜索相关状态
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [opengraphWithEmbeddings, setOpengraphWithEmbeddings] = useState([]); // 带Embedding的OpenGraph数据
+  const [searchResults, setSearchResults] = useState(null); // 搜索结果（null表示未搜索）
 
   // 从 storage 加载 OpenGraph 数据
   useEffect(() => {
@@ -134,6 +145,213 @@ export const PersonalSpace = () => {
     });
     
     return positioned;
+  };
+
+  // 为OpenGraph数据生成Embedding（批量处理，避免过载）
+  const handleGenerateEmbeddings = async () => {
+    if (!opengraphData || opengraphData.length === 0) {
+      console.warn('[Search] No OpenGraph data to process');
+      return [];
+    }
+
+    try {
+      setIsSearching(true);
+      console.log('[Search] Generating embeddings for', opengraphData.length, 'items');
+      
+      // 分批处理，每批10个，避免过载
+      const batchSize = 10;
+      const batches = [];
+      for (let i = 0; i < opengraphData.length; i += batchSize) {
+        batches.push(opengraphData.slice(i, i + batchSize));
+      }
+
+      const allProcessedItems = [];
+      for (let i = 0; i < batches.length; i++) {
+        console.log(`[Search] Processing batch ${i + 1}/${batches.length}`);
+        const batch = batches[i];
+        const result = await generateEmbeddings(batch);
+        
+        if (result.ok && result.data) {
+          allProcessedItems.push(...result.data);
+        }
+        
+        // 批次间延迟，避免API限流
+        if (i < batches.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      // 检查 embedding 是否包含
+      const itemsWithEmbedding = allProcessedItems.filter(item => item.embedding).length;
+      console.log('[Search] Generated embeddings for', allProcessedItems.length, 'items,', itemsWithEmbedding, 'have embedding');
+      if (itemsWithEmbedding === 0 && allProcessedItems.length > 0) {
+        console.warn('[Search] WARNING: No embeddings in processed items!', allProcessedItems[0]);
+      }
+      
+      // 保存到状态
+      setOpengraphWithEmbeddings(allProcessedItems);
+      // 同时返回数据，避免状态更新延迟问题
+      return allProcessedItems;
+    } catch (error) {
+      console.error('[Search] Error generating embeddings:', error);
+      alert('生成Embedding失败：' + (error.message || '未知错误'));
+      return [];
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 执行搜索
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      setSearchResults(null);
+      return;
+    }
+
+    const baseItems = opengraphWithEmbeddings.length > 0 ? opengraphWithEmbeddings : opengraphData;
+
+    // 本地兜底：根据标题/描述做简单模糊排序（包含/分词重叠）
+    const fuzzyRankLocally = (query, items) => {
+      const q = query.toLowerCase().trim();
+      const qTokens = q.split(/\s+/).filter(Boolean);
+      const scored = items.map((it, idx) => {
+        const text = ((it.title || it.tab_title || "") + " " + (it.description || "")).toLowerCase();
+        let score = 0;
+        if (text.includes(q)) score += 3; // 整体包含加权
+        for (const t of qTokens) {
+          if (t && text.includes(t)) score += 1; // 分词包含加分
+        }
+        // 轻微提升标题命中
+        const titleText = (it.title || it.tab_title || "").toLowerCase();
+        if (titleText.includes(q)) score += 1;
+        // 归一化到 [0, 1] 范围（粗略近似）
+        const normalizedScore = Math.min(score / 10.0, 1.0);
+        return { ...it, similarity: normalizedScore, idx };
+      });
+      // 如果全部为0分，也返回原列表但保证有序
+      scored.sort((a, b) => (b.similarity - a.similarity) || (a.idx - b.idx));
+      return scored;
+    };
+
+    // 如果没有 Embedding，先生成
+    let itemsToSearch = opengraphWithEmbeddings.length > 0 ? opengraphWithEmbeddings : opengraphData;
+    if (opengraphWithEmbeddings.length === 0) {
+      console.log('[Search] No embeddings found, generating...');
+      const generatedItems = await handleGenerateEmbeddings();
+      // 直接使用返回的数据，避免状态更新延迟
+      if (generatedItems && generatedItems.length > 0) {
+        itemsToSearch = generatedItems;
+        console.log('[Search] Using freshly generated embeddings:', generatedItems.filter(item => item.embedding).length, 'have embedding');
+      }
+    }
+
+    try {
+      setIsSearching(true);
+      console.log('[Search] Searching for:', searchQuery);
+      const itemsWithEmbedding = itemsToSearch.filter(item => item.embedding).length;
+      console.log('[Search] Sending', itemsToSearch.length, 'items,', itemsWithEmbedding, 'have embedding');
+      
+      const result = await searchContent(
+        searchQuery,
+        null, // 暂时不支持图片搜索
+        itemsToSearch
+      );
+
+      let finalList = [];
+      if (result && result.ok && Array.isArray(result.data) && result.data.length > 0) {
+        finalList = result.data;
+      } else {
+        console.warn('[Search] Backend returned empty, using local fuzzy ranking');
+        finalList = fuzzyRankLocally(searchQuery, baseItems);
+      }
+      
+      // 按相似度排序（降序，最相关在前）
+      finalList.sort((a, b) => {
+        const simA = a.similarity ?? 0;
+        const simB = b.similarity ?? 0;
+        return simB - simA; // 降序
+      });
+      
+      console.log('[Search] Sorted results (top 5):', finalList.slice(0, 5).map(r => ({
+        title: r.title || r.tab_title,
+        similarity: r.similarity
+      })));
+      
+      // 根据相似度/分数排列结果（圆形布局，最相关在内环）
+      const searchResultItems = finalList.map((item, index) => ({
+        ...item,
+        id: item.tab_id ? `og-search-${item.tab_id}` : `og-search-${index}-${Date.now()}`,
+      }));
+      
+      // 计算圆形布局位置（已按相关性排序，最相关在内环）
+      const positionedResults = calculateRadialLayout(searchResultItems);
+      
+      console.log('[Search] Positioned results (first 3):', positionedResults.slice(0, 3).map(r => ({
+        title: r.title || r.tab_title,
+        x: r.x,
+        y: r.y,
+        similarity: r.similarity
+      })));
+      
+      // 确保每个结果都有唯一的 ID 和位置信息
+      const finalResults = positionedResults.map((item, idx) => ({
+        ...item,
+        id: item.id || `og-search-${idx}-${Date.now()}`,
+        x: item.x ?? 720, // 默认中心位置
+        y: item.y ?? 512,
+        width: item.width ?? 120,
+        height: item.height ?? 120,
+      }));
+      
+      setSearchResults(finalResults);
+      
+      // 更新显示的OpenGraph数据（这会触发重新渲染）
+      setOpengraphData(finalResults);
+      setShowOriginalImages(false);
+      
+      console.log('[Search] Updated opengraphData with', finalResults.length, 'items');
+    } catch (error) {
+      console.error('[Search] Error searching:', error);
+      // 出错也做兜底
+      const fallback = fuzzyRankLocally(searchQuery, baseItems);
+      // 按相似度排序（降序）
+      fallback.sort((a, b) => {
+        const simA = a.similarity ?? 0;
+        const simB = b.similarity ?? 0;
+        return simB - simA;
+      });
+      const fallbackItems = fallback.map((item, index) => ({
+        ...item,
+        id: item.tab_id ? `og-search-${item.tab_id}` : `og-search-${index}-${Date.now()}`,
+      }));
+      const positioned = calculateRadialLayout(fallbackItems);
+      // 确保每个结果都有完整的位置信息
+      const finalFallback = positioned.map((item, idx) => ({
+        ...item,
+        id: item.id || `og-search-${idx}-${Date.now()}`,
+        x: item.x ?? 720,
+        y: item.y ?? 512,
+        width: item.width ?? 120,
+        height: item.height ?? 120,
+      }));
+      setSearchResults(finalFallback);
+      setOpengraphData(finalFallback);
+      setShowOriginalImages(false);
+      console.log('[Search] Fallback: Updated opengraphData with', finalFallback.length, 'items');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 清空搜索
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setSearchResults(null);
+    // 恢复原始数据
+    if (opengraphData.length > 0) {
+      const originalData = calculateRadialLayout(opengraphData);
+      setOpengraphData(originalData);
+    }
   };
 
   // 处理选中
@@ -572,13 +790,64 @@ export const PersonalSpace = () => {
         }
       };
 
+      // 处理鼠标滚轮缩放
+      const handleWheel = (e) => {
+        // 如果正在使用工具，不处理滚轮事件
+        if (activeTool) {
+          return;
+        }
+        
+        // 注意：不要在被动监听器中调用 preventDefault()
+        
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        // 获取 canvas 的边界框
+        const rect = canvas.getBoundingClientRect();
+        
+        // 获取鼠标相对于视口的位置
+        const mouseX = e.clientX;
+        const mouseY = e.clientY;
+        
+        // 计算鼠标相对于 canvas 中心的位置（考虑当前的缩放和平移）
+        // canvas 原本是居中定位的，所以需要计算相对于中心的偏移
+        const canvasCenterX = rect.left + rect.width / 2;
+        const canvasCenterY = rect.top + rect.height / 2;
+        
+        // 鼠标相对于 canvas 中心的距离（在视口坐标系中）
+        const offsetX = mouseX - canvasCenterX;
+        const offsetY = mouseY - canvasCenterY;
+        
+        // 计算缩放前的鼠标在画布内容空间中的位置（考虑当前的缩放和平移）
+        const contentX = (offsetX - pan.x) / zoom;
+        const contentY = (offsetY - pan.y) / zoom;
+        
+        // 计算新的缩放比例（限制在 0.1 到 5 倍之间）
+        const zoomSpeed = 0.1;
+        const zoomDelta = e.deltaY > 0 ? -zoomSpeed : zoomSpeed;
+        const newZoom = Math.max(0.1, Math.min(5, zoom + zoomDelta));
+        
+        // 计算新的平移位置，使鼠标指向的内容位置保持不变
+        // 缩放后，要使同一个内容位置仍在鼠标下
+        const newPanX = offsetX - contentX * newZoom;
+        const newPanY = offsetY - contentY * newZoom;
+        
+        setZoom(newZoom);
+        setPan({ x: newPanX, y: newPanY });
+      };
+
       return (
         <div className="personal-space">
           <div 
             className="canvas" 
             ref={canvasRef}
-            style={{ cursor: getCanvasCursor() }}
+            style={{ 
+              cursor: getCanvasCursor(),
+              transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: 'center center',
+            }}
             onClick={handleCanvasClick}
+            onWheel={handleWheel}
           >
         {/* 原有图片（仅在未加载 OpenGraph 时显示） */}
         {showOriginalImages && images.map(img => (
@@ -600,9 +869,13 @@ export const PersonalSpace = () => {
 
         {/* OpenGraph 图片（使用 DraggableImage，支持拖拽和工具） */}
         {!showOriginalImages && opengraphData && Array.isArray(opengraphData) && opengraphData.length > 0 && opengraphData.map((og) => {
-          if (!og || typeof og !== 'object' || !og.x || !og.y || !og.id) {
+          // 确保有必要的字段
+          if (!og || typeof og !== 'object' || !og.id) {
             return null;
           }
+          // 如果没有 x, y，使用默认值（中心位置）
+          const x = og.x ?? 720;
+          const y = og.y ?? 512;
           
           // 直接使用 DraggableImage，位置由组件内部管理
           return (
@@ -612,10 +885,10 @@ export const PersonalSpace = () => {
               className="opengraph-image"
               src={og.image || 'https://via.placeholder.com/120'}
               alt={og.title || og.url}
-              initialX={og.x}
-              initialY={og.y}
-              width={og.width}
-              height={og.height}
+              initialX={x}
+              initialY={y}
+              width={og.width || 120}
+              height={og.height || 120}
               isSelected={selectedIds.has(og.id)}
               onSelect={(id, isMultiSelect) => {
                 handleSelect(id, isMultiSelect);
@@ -679,9 +952,54 @@ export const PersonalSpace = () => {
       </div>
 
       <div className="search-bar">
-        <img className="image-12" alt="Image" src={getImageUrl("5.svg")} />
-
-        <div className="text-wrapper-19">大促物料参考</div>
+        <img className="image-12" alt="Search icon" src={getImageUrl("5.svg")} />
+        
+        <input
+          type="text"
+          className="search-input"
+          placeholder="请输入搜索内容..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              handleSearch();
+            } else if (e.key === 'Escape') {
+              handleClearSearch();
+            }
+          }}
+          style={{
+            flex: 1,
+            border: 'none',
+            outline: 'none',
+            background: 'transparent',
+            fontSize: '16px',
+            fontFamily: '"SF Pro Display-Regular", Helvetica',
+            color: '#000000',
+          }}
+        />
+        
+        {isSearching && (
+          <div style={{ fontSize: '12px', color: '#666', marginRight: '8px' }}>
+            搜索中...
+          </div>
+        )}
+        
+        {searchQuery && (
+          <button
+            onClick={handleClearSearch}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              fontSize: '12px',
+              color: '#666',
+            }}
+            title="清空搜索"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <img

@@ -13,7 +13,7 @@
   left: 50%;
   position: absolute;
   top: 50%;
-  transform: translate(-50%, -50%);
+  /* transform 由 JavaScript 动态控制，支持缩放和平移 */
   width: 1440px;
   min-width: 1440px;
 }

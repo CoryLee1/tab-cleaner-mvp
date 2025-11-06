@@ -30,3 +30,34 @@ export async function shareSession() {
   await navigator.clipboard.writeText(shareUrl);
   return shareUrl;
 }
+
+// 搜索相关 API
+export async function generateEmbeddings(opengraphItems) {
+  const resp = await fetch(API + "/search/embedding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ opengraph_items: opengraphItems })
+  });
+  if (!resp.ok) {
+    throw new Error(`HTTP error! status: ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data;
+}
+
+export async function searchContent(queryText, queryImageUrl, opengraphItems) {
+  const resp = await fetch(API + "/search/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query_text: queryText || null,
+      query_image_url: queryImageUrl || null,
+      opengraph_items: opengraphItems
+    })
+  });
+  if (!resp.ok) {
+    throw new Error(`HTTP error! status: ${resp.status}`);
+  }
+  const data = await resp.json();
+  return data;
+}
