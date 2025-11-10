@@ -1,0 +1,69 @@
+{
+  "type": "manual",
+  "timestamp": "20251110_164941",
+  "result": {
+    "id": "cluster-84626bab",
+    "name": "2",
+    "type": "manual",
+    "items": [
+      {
+        "description": "Jun 17, 2025 - This Pin was discovered by MM. Discover (and save!) your own Pins on Pinterest",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/76/fe/1f/76fe1f8b79d2f0ec7194c5c74815b9ee.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357035,
+        "tab_title": "收藏到 Affiche",
+        "title": "Pin by MM on Affiche in 2025 | Motion graphics inspiration, Motion design animation, Motion design video",
+        "url": "https://www.pinterest.com/pin/351912466453458/",
+        "x": 547,
+        "y": 257,
+        "width": 120,
+        "height": 120,
+        "id": "og-5-1762764552997"
+      },
+      {
+        "description": "혹시 이런 스타일의 일본 음악 취향이신가요? 부드럽고 세련된 J-pop R&B만 골라담았어요듣다보면 빠져드는 매력적인 플레이리스트 ✨🎵 Playlist00:00 ミッドナイト・ブルー (Midnight Blue)03:27  午後4時の光 (오후 4시의 빛)06:36  ガラス越しの君 (...",
+        "error": null,
+        "image": "https://i.ytimg.com/vi/VtJRJg8724g/maxresdefault.jpg?sqp=-oaymwEmCIAKENAF8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGEQgWyhlMA8=&rs=AOn4CLD5_6M0yDTzgr4mUI4jQ0cfeeVxrg",
+        "is_screenshot": false,
+        "site_name": "YouTube",
+        "success": true,
+        "tab_id": 295357040,
+        "tab_title": "(12) [Playlist] 혹시 이런 일본 음악 좋아해? | J-pop R&B - YouTube",
+        "title": "[Playlist] 혹시 이런 일본 음악 좋아해? | J-pop R&B",
+        "url": "https://www.youtube.com/watch?v=VtJRJg8724g",
+        "x": 335,
+        "y": 265,
+        "width": 120,
+        "height": 120,
+        "id": "og-16-1762764552997"
+      },
+      {
+        "description": "このチャンネルは、レトロで懐かしい昭和のJ-POPをお楽しみいただけます♪レコードの音質や心地よいサウンドに包まれながら、青春の日々を思い返してリラックスした時間をお楽しみください。This channel invites you to indulge in the nostalgic charm of retr...",
+        "error": null,
+        "image": "https://i.ytimg.com/vi/HQrQbsZVKOg/maxresdefault.jpg",
+        "is_screenshot": false,
+        "site_name": "YouTube",
+        "success": true,
+        "tab_id": 295357032,
+        "tab_title": "(12) TOKYO夏日音乐 | 昭和怀旧City Pop 1980 | 放松、驾驶与学习 - YouTube",
+        "title": "Neon Bar Nights Music | 昭和の懐かしきシティポップ 1980 | Chill, Drive & Study",
+        "url": "https://www.youtube.com/watch?v=HQrQbsZVKOg",
+        "x": 472,
+        "y": 127,
+        "width": 120,
+        "height": 120,
+        "id": "og-17-1762764552997"
+      }
+    ],
+    "center": {
+      "x": 451.3333333333333,
+      "y": 216.33333333333334
+    },
+    "radius": 200,
+    "created_at": "2025-11-10T16:49:41.495195",
+    "item_count": 3
+  }
+}

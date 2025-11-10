@@ -1,0 +1,86 @@
+{
+  "type": "manual",
+  "timestamp": "20251110_200421",
+  "result": {
+    "id": "cluster-dd3df68f",
+    "name": "4",
+    "type": "manual",
+    "items": [
+      {
+        "description": "☔ Hey there! It’s 3;02 in the afternoon, and outside my window, Shibuya is soaked in rain. I’m on the second floor, looking down at the shopping street — peo...",
+        "error": null,
+        "image": "https://i.ytimg.com/vi/0JvAPwUHLNk/maxresdefault.jpg",
+        "is_screenshot": false,
+        "site_name": "YouTube",
+        "success": true,
+        "tab_id": 295357100,
+        "tab_title": "2-HOUR STUDY WITH ME🌦️ / calm piano / A Rainy Day in Shibuya, Tokyo / Pomodoro 25-5 - YouTube",
+        "title": "2-HOUR STUDY WITH ME🌦️ / calm piano / A Rainy Day in Shibuya, Tokyo /  Pomodoro 25-5",
+        "url": "https://www.youtube.com/watch?v=0JvAPwUHLNk",
+        "x": 325,
+        "y": 960,
+        "width": 120,
+        "height": 120,
+        "id": "og-12-1762776213283"
+      },
+      {
+        "description": "Apr 29, 2025 - This Pin was discovered by Mỹ Huệ. Discover (and save!) your own Pins on Pinterest",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/c9/83/d5/c983d536ad9ee5adf9acc1864cc749df.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357114,
+        "tab_title": "收藏到 그래픽 디자인 포스터",
+        "title": "点击查看大图 [F] in 2025 | Graphic design posters, Coffee poster design, Abstract graphic design",
+        "url": "https://www.pinterest.com/pin/146085581659145686/",
+        "x": 790,
+        "y": 640,
+        "width": 120,
+        "height": 120,
+        "id": "og-26-1762776213283"
+      },
+      {
+        "description": "Discover the fascinating world of Yuxin Zhou's speculative practice and the delicate balance between research and play. Dive into her creative process and be inspired by her unique approach to art.",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/c4/44/2c/c4442c6914789e8c6e88ac66914ff574.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357115,
+        "tab_title": "Yuxin Zhou on her speculative practice and the balance between research and play",
+        "title": "Exploring Yuxin Zhou's Speculative Practice",
+        "url": "https://www.pinterest.com/pin/694117361355087644/",
+        "x": -185,
+        "y": 1203,
+        "width": 120,
+        "height": 120,
+        "id": "og-27-1762776213283"
+      },
+      {
+        "description": "Aug 3, 2025 - Godly is a curation of the best web design inspiration, every day. Browse the best e-commerce websites, portfolio websites, animation websites and more.",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/5b/46/51/5b465126e5c855d8b0ba52112399e0a7.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357116,
+        "tab_title": "Vitra: Office Chair Finder — Godly",
+        "title": "Godly is a curation of the best web design inspiration, every day. Browse the best e-commerce websites, portfolio w… in 2025 | Best web design, Web design, Portfolio design",
+        "url": "https://www.pinterest.com/pin/132222939056146251/",
+        "x": -185,
+        "y": 77,
+        "width": 120,
+        "height": 120,
+        "id": "og-28-1762776213283"
+      }
+    ],
+    "center": {
+      "x": 186.25,
+      "y": 720.0
+    },
+    "radius": 200,
+    "created_at": "2025-11-10T20:04:21.937807",
+    "item_count": 4
+  }
+}

@@ -318,40 +318,8 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 
         console.log(`[Tab Cleaner Background] Found ${validTabs.length} valid tabs`);
 
-        // 先截图文档类标签页（只对实际存在的标签页）
-        // 注意：如果标签页不存在，前端无法截图，需要等待后端截图
-        console.log(`[Tab Cleaner Background] Capturing screenshots for doc-like tabs...`);
-        const screenshotResults = await captureDocTabScreenshots(validTabs);
-        console.log(`[Tab Cleaner Background] Captured ${screenshotResults.length} screenshots`);
-        
-        // 前端截图完成后，只关闭成功截图的标签页
-        // 如果前端截图失败（标签页不存在），等待后端截图完成后再关闭
-        const successfullyScreenshotTabIds = screenshotResults
-          .filter(result => result.screenshot && result.tabId)
-          .map(result => result.tabId);
-        
-        if (successfullyScreenshotTabIds.length > 0) {
-          console.log(`[Tab Cleaner Background] Closing ${successfullyScreenshotTabIds.length} doc-like tabs after frontend screenshots...`);
-          for (const tabId of successfullyScreenshotTabIds) {
-            try {
-              await chrome.tabs.remove(tabId);
-            } catch (error) {
-              console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed or invalid:`, error.message);
-            }
-          }
-        }
-        
-        // 记录哪些文档类标签页前端截图失败（需要等待后端截图）
-        const failedScreenshotUrls = screenshotResults
-          .filter(result => !result.screenshot && isDocLikeUrl(result.url))
-          .map(result => result.url);
-        
-        if (failedScreenshotUrls.length > 0) {
-          console.log(`[Tab Cleaner Background] ${failedScreenshotUrls.length} doc-like tabs failed frontend screenshot, will wait for backend screenshot:`, failedScreenshotUrls);
-        }
-
-        // 调用后端 API 抓取 OpenGraph
-        // 对于文档类网页，后端会先用 OpenGraph/文档卡片兜底，然后异步尝试后端截图
+        // 优先调用后端 API 抓取 OpenGraph（所有网页都先尝试 OpenGraph）
+        // 只有 OpenGraph 失败或没有图片，且是文档类时，后端才会使用截图/文档卡片
         let response;
         let opengraphData;
         
@@ -401,39 +369,90 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           throw new Error(`响应解析失败：${jsonError.message}`);
         }
 
-        // 合并截图数据到 OpenGraph 数据中
+        // 处理 OpenGraph 数据
+        // 后端已经优先使用 OpenGraph，只有文档类且 OpenGraph 失败时才使用截图/文档卡片
         const opengraphItems = opengraphData.data || (Array.isArray(opengraphData) ? opengraphData : []);
-        const mergedData = mergeScreenshotsIntoOpenGraph(opengraphItems, screenshotResults);
-        console.log(`[Tab Cleaner Background] Merged ${screenshotResults.length} screenshots into OpenGraph data`);
+        const mergedData = opengraphItems; // 不再需要前端截图合并，后端已处理
+        console.log(`[Tab Cleaner Background] Processed ${mergedData.length} OpenGraph items`);
+
+        // 后端已经在 OpenGraph 解析时预取了 embedding，但可能还在异步处理中
+        // 检查哪些 item 还没有 embedding，补充请求（作为兜底）
+        console.log('[Tab Cleaner Background] Checking and supplementing embeddings for OpenGraph items...');
+        const itemsWithEmbeddings = await Promise.all(mergedData.map(async (item, index) => {
+          // 如果已经有 embedding，直接返回
+          if (item.text_embedding && item.image_embedding) {
+            console.log(`[Tab Cleaner Background] ✓ Embeddings already present for ${item.url.substring(0, 60)}...`);
+            return item;
+          }
+          
+          // 如果 item 成功但还没有 embedding，补充请求（后端可能还在异步处理）
+          if (item.success && (!item.text_embedding || !item.image_embedding)) {
+            // 避免频繁请求，添加小延迟
+            if (index > 0) {
+              await new Promise(resolve => setTimeout(resolve, 50)); // 50ms 延迟
+            }
+            
+            try {
+              const response = await fetch('http://localhost:8000/api/v1/search/embedding', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  opengraph_items: [{
+                    url: item.url,
+                    title: item.title,
+                    description: item.description,
+                    image: item.image,
+                    site_name: item.site_name,
+                    is_screenshot: item.is_screenshot,
+                    is_doc_card: item.is_doc_card,
+                  }]
+                }),
+              });
+              
+              if (response.ok) {
+                const embeddingData = await response.json();
+                if (embeddingData.data && embeddingData.data.length > 0) {
+                  const embeddingItem = embeddingData.data[0];
+                  if (embeddingItem.text_embedding && embeddingItem.image_embedding) {
+                    console.log(`[Tab Cleaner Background] ✓ Supplemented embeddings for ${item.url.substring(0, 60)}...`);
+                    return {
+                      ...item,
+                      text_embedding: embeddingItem.text_embedding,
+                      image_embedding: embeddingItem.image_embedding,
+                    };
+                  }
+                }
+              }
+            } catch (error) {
+              console.warn(`[Tab Cleaner Background] Failed to supplement embeddings for ${item.url.substring(0, 60)}... Error:`, error);
+            }
+          }
+          return item; // 返回原始 item 或已有的 item
+        }));
+        console.log('[Tab Cleaner Background] Embedding check completed.');
 
         // 保存到 storage，供个人空间使用
         // 确保数据结构一致：{ok: true, data: [...]}
         await chrome.storage.local.set({ 
           opengraphData: {
             ok: opengraphData.ok || true,
-            data: mergedData
+            data: itemsWithEmbeddings
           },
           lastCleanTime: Date.now()
         });
 
-        // 关闭剩余的 tabs
-        // 1. 文档类标签页：前端截图成功的已经关闭，前端截图失败的等待后端截图
-        // 2. 其他标签页：直接关闭
-        const remainingTabIds = validTabs
-          .filter(tab => {
-            // 排除已经关闭的文档类标签页（前端截图成功的）
-            if (isDocLikeUrl(tab.url) && successfullyScreenshotTabIds.includes(tab.id)) {
-              return false; // 已关闭
-            }
-            return true; // 需要关闭
-          })
+        // 关闭所有标签页（OpenGraph 已获取，可以关闭了）
+        // 对于文档类且 OpenGraph 失败的，后端会使用截图/文档卡片，不需要保持标签页打开
+        const allTabIds = validTabs
           .map(tab => tab.id)
           .filter(id => id !== undefined);
         
-        if (remainingTabIds.length > 0) {
-          console.log(`[Tab Cleaner Background] Closing ${remainingTabIds.length} remaining tabs...`);
+        if (allTabIds.length > 0) {
+          console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs after OpenGraph fetch...`);
           // 逐个关闭，避免一个失败导致全部失败
-          for (const tabId of remainingTabIds) {
+          for (const tabId of allTabIds) {
             try {
               await chrome.tabs.remove(tabId);
             } catch (error) {
@@ -442,10 +461,6 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
             }
           }
         }
-        
-        // 如果前端截图失败的文档类标签页，等待后端截图完成后再关闭
-        // 注意：这里不等待，因为后端截图是异步的，标签页会在后端截图完成后自动关闭
-        // 或者用户可以在个人空间看到文档卡片，标签页可以稍后关闭
 
         // 打开个人空间
         chrome.tabs.create({

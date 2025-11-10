@@ -1,0 +1,87 @@
+{
+  "type": "manual",
+  "timestamp": "20251110_165142",
+  "result": {
+    "id": "cluster-adb820cc",
+    "name": "111",
+    "type": "manual",
+    "items": [
+      {
+        "description": "You don’t need to have it all figured out, just take one brave small step forward.This is your soundtrack for calm focus and quiet bravery. For the days you ...",
+        "error": null,
+        "image": "https://i.ytimg.com/vi/ZODwKOGuCpo/maxresdefault.jpg?sqp=-oaymwEmCIAKENAF8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGHIgTSgyMA8=&rs=AOn4CLCLsg7fQbtT_TDDyaX17DnJvm_c9g",
+        "is_screenshot": false,
+        "site_name": "YouTube",
+        "success": true,
+        "tab_id": 295357098,
+        "tab_title": "Change starts with one courageous decision today. - YouTube",
+        "title": "Change starts with one courageous decision today.",
+        "url": "https://www.youtube.com/watch?v=ZODwKOGuCpo",
+        "x": 435,
+        "y": 452,
+        "width": 120,
+        "height": 120,
+        "id": "og-10-1762764667921"
+      },
+      {
+        "description": "このピンは、BOLVAKHさんが見つけました。あなたも Pinterest で自分だけのピンを見つけて保存しましょう！",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/22/30/84/223084f066f94cbe91cc5ad45366c631.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357112,
+        "tab_title": "收藏到 Комикс",
+        "title": "「холст масло」おしゃれまとめの人気アイデア｜Pinterest｜BOLVAKH | パンフレット デザイン, ポスターデザイン, グラフィックポスター",
+        "url": "https://www.pinterest.com/pin/83457399338809846/",
+        "x": 285,
+        "y": 452,
+        "width": 120,
+        "height": 120,
+        "id": "og-24-1762764667921"
+      },
+      {
+        "description": "2025/07/05 - 昨日は休みだったので、ひろくん @hirotakaurabe の空手用の道着を洗濯しにコインランドリーへ✌︎ 洗濯待ちの間にカフェが出来て、勉強もできる環境に惚れ惚れした〜〜😍 #coinlaundry #コインランドリー #cafe #カフェ #休日 #GW",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/0f/ec/f9/0fecf982de25767b72b3437d9c704241.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357113,
+        "tab_title": "@高橋ユウ: 昨日は休みだったので、ひろくん @hirotakaurabe の空手用の道着を洗濯しにコインランドリーへ︎ 洗濯待ちの間にカフェが出来て、勉強もできる環境に惚れ... - WACOCA",
+        "title": "@高橋ユウ: 昨日は休みだったので、ひろくん @hirotakaurabe の空手用の道着を洗濯しにコインランドリーへ︎ 洗濯待ちの間にカフェが出来て、勉強もできる環境に惚れ... - WACOCA【2025】 | コインランドリー, カフェ, 空手",
+        "url": "https://www.pinterest.com/pin/40180621670894044/",
+        "x": 335,
+        "y": 265,
+        "width": 120,
+        "height": 120,
+        "id": "og-25-1762764667921"
+      },
+      {
+        "description": "🎀 This music compilation has been uploaded in cooperation with Epidemic Sound’s Music Ambassador Program ⋆˚꩜.ᐟ 𐔌՞. .՞𐦯 🎀 Boost your stories with Epidemic...",
+        "error": null,
+        "image": "https://i.ytimg.com/vi/T8yhBEj0Vuo/maxresdefault.jpg",
+        "is_screenshot": false,
+        "site_name": "YouTube",
+        "success": true,
+        "tab_id": 295357094,
+        "tab_title": "🛒 konbini moments 🌸 cozy japanese convenience store・animal crossing bgm・chill study/work music 🍙 - YouTube",
+        "title": "🛒 konbini moments 🌸 cozy japanese convenience store・animal crossing bgm・chill study/work music 🍙",
+        "url": "https://www.youtube.com/watch?v=T8yhBEj0Vuo",
+        "x": 435,
+        "y": 452,
+        "width": 120,
+        "height": 120,
+        "id": "og-6-1762764667921",
+        "animationDelay": 200
+      }
+    ],
+    "center": {
+      "x": 372.5,
+      "y": 405.25
+    },
+    "radius": 200,
+    "created_at": "2025-11-10T16:51:42.508614",
+    "item_count": 4
+  }
+}

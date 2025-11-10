@@ -1,0 +1,103 @@
+{
+  "type": "manual",
+  "timestamp": "20251110_182827",
+  "result": {
+    "id": "cluster-c41126c1",
+    "name": "3",
+    "type": "manual",
+    "items": [
+      {
+        "description": "⋆｡‧˚ʚ🥭ɞ˚‧｡⋆ ultimate playlist for studying or vibing ୭ ˚. ᵎᵎ♬⋆.˚ like & subscribe to never miss a new playlist! . ݁₊ ⊹ . ݁˖ . ݁ ────⋆⋅☆⋅⋆──────⋆⋅☆⋅⋆──────⋆⋅...",
+        "error": null,
+        "image": "https://i.ytimg.com/vi/z4OwdHYi75c/maxresdefault.jpg",
+        "is_screenshot": false,
+        "site_name": "YouTube",
+        "success": true,
+        "tab_id": 295357092,
+        "tab_title": "˙ ✩°˖🥭 mango playlist ⋆｡˚꩜ (mood boosting playlist!!) - YouTube",
+        "title": "˙ ✩°˖🥭 mango playlist ⋆｡˚꩜  (mood boosting playlist!!)",
+        "url": "https://www.youtube.com/watch?v=z4OwdHYi75c",
+        "x": 290,
+        "y": 540,
+        "width": 120,
+        "height": 120,
+        "id": "og-4-1762770475900"
+      },
+      {
+        "description": "Study or work with Makoto!Studying with the Pomodoro Technique helps enhance focus and concentration by breaking tasks into short, manageable intervals with ...",
+        "error": null,
+        "image": "https://i.ytimg.com/vi/d1nxp8Ke7pU/maxresdefault.jpg",
+        "is_screenshot": false,
+        "site_name": "YouTube",
+        "success": true,
+        "tab_id": 295357093,
+        "tab_title": "Persona 3 Reload - Pomodoro 25/5 | Study With Makoto [2hr] - YouTube",
+        "title": "Persona 3 Reload - Pomodoro 25/5 | Study With Makoto [2hr]",
+        "url": "https://www.youtube.com/watch?v=d1nxp8Ke7pU",
+        "x": 215,
+        "y": 670,
+        "width": 120,
+        "height": 120,
+        "id": "og-5-1762770475900"
+      },
+      {
+        "description": "Discover recipes, home ideas, style inspiration and other ideas to try.",
+        "error": null,
+        "image": "https://s.pinimg.com/images/facebook_share_image.png",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357102,
+        "tab_title": "Pinterest",
+        "title": "Pinterest",
+        "url": "https://www.pinterest.com/",
+        "x": 380,
+        "y": 540,
+        "width": 120,
+        "height": 120,
+        "id": "og-14-1762770475900"
+      },
+      {
+        "description": "Oct 12, 2025 - iphone phone layout background wallpaper inspo inspiration frutiger aero y2k 2000s homescreen lockscreen widgetsmith",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/23/ad/51/23ad51250ac15f5149282609a29bee2b.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357103,
+        "tab_title": "Current home screen",
+        "title": "Current home screen in 2025 | Iphone phone, Best apps, Facetime",
+        "url": "https://www.pinterest.com/pin/1049831363190697105/",
+        "x": 348,
+        "y": 660,
+        "width": 120,
+        "height": 120,
+        "id": "og-15-1762770475900"
+      },
+      {
+        "description": "21 ago. 2025 - 🌊`°Eᗰᗰᑫ°`💧 descrubrió este Pin. Descubre (y guarda) tus propios Pines en Pinterest.",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/a8/90/67/a89067adb04ab5da2a4e2247d86e1954.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357104,
+        "tab_title": "收藏到 SO AESTHETIC",
+        "title": "Pin de 🌊`°Eᗰᗰᑫ°`💧 en 🍃📏`°𝕱𝖗𝖚𝖙𝖎𝖌𝖊𝖗 𝖆𝖊𝖗𝖔.°`📐💦 en 2025 | Naturaleza estética, Paisaje de fantasía, Paisajes",
+        "url": "https://www.pinterest.com/pin/10625749119465149/",
+        "x": 260,
+        "y": 748,
+        "width": 120,
+        "height": 120,
+        "id": "og-16-1762770475900"
+      }
+    ],
+    "center": {
+      "x": 298.6,
+      "y": 631.6
+    },
+    "radius": 200,
+    "created_at": "2025-11-10T18:28:27.990934",
+    "item_count": 5
+  }
+}

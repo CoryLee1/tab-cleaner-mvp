@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Component } from "../../components/Component";
 import { SearchBar } from "../../components/SearchBar";
 import { ToolSets } from "../../components/ToolSets";
@@ -17,6 +17,7 @@ import { handleLassoSelect as handleLassoSelectUtil } from "../../utils/selectio
 import { calculateMultipleClustersLayout } from "../../utils/clusterLayout";
 import { createManualCluster, classifyByLabels, discoverClusters } from "../../shared/api";
 import { calculateStaggerDelay, CLUSTER_ANIMATION } from "../../motion";
+import { useClusterSpringAnimation } from "../../hooks/useClusterSpringAnimation";
 import "./style.css";
 
 export const PersonalSpace = () => {
@@ -67,6 +68,7 @@ export const PersonalSpace = () => {
   const [clusters, setClusters] = useState([]); // 所有聚类列表
   const [isClustering, setIsClustering] = useState(false); // 是否正在聚类
   const [aiLabels, setAiLabels] = useState(["设计", "工作文档"]); // AI 聚类标签（预设两个）
+  const clusterDragStartRef = useRef(new Map()); // 拖动开始时保存每个聚类的初始位置和卡片位置
 
   // 搜索相关状态（使用 hook）
   const {
@@ -100,22 +102,47 @@ export const PersonalSpace = () => {
             
             // 过滤掉失败的数据
             // 注意：文档卡片（is_doc_card）即使没有 success=true，只要有 image 也应该显示
+            // 普通网页即使没有图片，只要有 OpenGraph 数据也应该显示（可以显示标题等）
             const validOG = ogData.filter(item => 
               item && 
               typeof item === 'object' && 
               (item.success || item.is_doc_card) &&  // 成功或文档卡片
-              item.image  // 必须有图片（截图或文档卡片）
+              (item.image || (item.title && item.title !== item.url))  // 必须有图片，或者有有效的标题（不是URL）
             );
             
             if (validOG.length > 0) {
               setShowOriginalImages(false); // 隐藏原有图片
               
               // 计算放射状布局位置，并为每个 OpenGraph 图片生成唯一 ID
-              const positionedOG = calculateRadialLayout(validOG).map((og, index) => ({
+              // 明确指定中心点为画布中心 (720, 512)，确保卡片居中
+              const positionedOG = calculateRadialLayout(validOG, {
+                centerX: 720,  // 画布中心 X (1440 / 2)
+                centerY: 512,  // 画布中心 Y (1024 / 2)
+              }).map((og, index) => ({
                 ...og,
                 id: `og-${index}-${Date.now()}`, // 生成唯一 ID
               }));
               setOpengraphData(positionedOG);
+              
+              // 初始状态：如果没有聚类，创建一个默认聚类包含所有卡片
+              // 使用 useEffect 确保在 opengraphData 更新后执行
+              setTimeout(() => {
+                setClusters(prev => {
+                  if (prev.length === 0) {
+                    const defaultCluster = {
+                      id: 'default-cluster',
+                      name: '未分类',
+                      type: 'default',
+                      items: positionedOG,
+                      center: { x: 720, y: 512 },
+                      radius: 200,
+                      item_count: positionedOG.length,
+                    };
+                    return [defaultCluster];
+                  }
+                  return prev;
+                });
+              }, 100);
             }
           }
         } catch (error) {
@@ -124,6 +151,44 @@ export const PersonalSpace = () => {
       });
     }
   }, []);
+
+  // Spring 动画：更新卡片位置
+  const updateCardPosition = useCallback((cardId, x, y) => {
+    // 更新 opengraphData 或 images 中对应卡片的位置
+    if (showOriginalImages) {
+      setImages(prev => prev.map(item => {
+        if (item.id === cardId) {
+          return { ...item, x, y };
+        }
+        return item;
+      }));
+    } else {
+      setOpengraphData(prev => prev.map(item => {
+        if (item.id === cardId) {
+          return { ...item, x, y };
+        }
+        return item;
+      }));
+    }
+  }, [showOriginalImages]);
+
+  // Spring 动画：更新聚类中心位置
+  const updateClusterCenter = useCallback((clusterId, x, y) => {
+    // 更新聚类状态
+    setClusters(prev => prev.map(c => {
+      if (c.id === clusterId) {
+        return { ...c, center: { x, y } };
+      }
+      return c;
+    }));
+  }, []);
+
+  // 使用 Spring 动画系统（每帧更新聚类圆心和卡片位置）
+  useClusterSpringAnimation(
+    clusters,
+    updateCardPosition,
+    updateClusterCenter
+  );
 
   // 执行搜索（使用 hook）
   const handleSearch = async () => {
@@ -652,6 +717,8 @@ export const PersonalSpace = () => {
             isSelected={selectedIds.has(img.id)}
             onSelect={handleSelect}
             onDragEnd={handleDragEnd}
+            zoom={zoom}
+            pan={pan}
           />
         ))}
 
@@ -669,8 +736,8 @@ export const PersonalSpace = () => {
           // 如果有 animationDelay，传递给组件用于错开动画
           // 文档卡片使用更大的尺寸以便显示更多信息（标题、类型等）
           const isDocCard = og.is_doc_card || false;
-          const cardWidth = isDocCard ? 320 : (og.width || 120);  // 增大文档卡片尺寸
-          const cardHeight = isDocCard ? 240 : (og.height || 120);  // 增大文档卡片尺寸
+          const cardWidth = isDocCard ? 200 : (og.width || 120);  // 缩小文档卡片尺寸
+          const cardHeight = isDocCard ? 150 : (og.height || 120);  // 缩小文档卡片尺寸
           
           return (
             <DraggableImage
@@ -687,16 +754,22 @@ export const PersonalSpace = () => {
               isSelected={selectedIds.has(og.id)}
               onSelect={(id, isMultiSelect) => {
                 handleSelect(id, isMultiSelect);
+              }}
+              zoom={zoom}
+              pan={pan}
+              onDragEnd={(id, x, y) => {
+                handleDragEnd(id, x, y);
+              }}
+              onClick={() => {
                 // 快速双击显示 OpenGraph 卡片（300ms 内两次点击同一图片）
                 const now = Date.now();
-                if (lastOGClickRef.current.id === id && now - lastOGClickRef.current.time < 300) {
+                if (lastOGClickRef.current.id === og.id && now - lastOGClickRef.current.time < 300) {
                   setSelectedOG(og);
                   lastOGClickRef.current = { time: 0, id: null };
                 } else {
-                  lastOGClickRef.current = { time: now, id };
+                  lastOGClickRef.current = { time: now, id: og.id };
                 }
               }}
-              onDragEnd={handleDragEnd}
             />
           );
         })}
@@ -710,6 +783,88 @@ export const PersonalSpace = () => {
               setClusters(prev => prev.map(c => 
                 c.id === clusterId ? { ...c, name: newName } : c
               ));
+            }}
+            onDrag={(clusterId, newCenter, isDragEnd) => {
+              // 如果是拖动开始（第一次调用），保存初始位置
+              if (!clusterDragStartRef.current.has(clusterId)) {
+                const cluster = clusters.find(c => c.id === clusterId);
+                if (cluster) {
+                  const initialCenter = cluster.center || { x: 720, y: 512 };
+                  const initialItems = (cluster.items || []).map(item => ({
+                    id: item.id,
+                    x: item.x || initialCenter.x,
+                    y: item.y || initialCenter.y,
+                  }));
+                  clusterDragStartRef.current.set(clusterId, {
+                    center: initialCenter,
+                    items: initialItems,
+                  });
+                }
+              }
+
+              const dragStart = clusterDragStartRef.current.get(clusterId);
+              if (!dragStart) return;
+
+              // 计算偏移量（基于拖动开始时的初始位置）
+              const offsetX = newCenter.x - dragStart.center.x;
+              const offsetY = newCenter.y - dragStart.center.y;
+
+              // 更新聚类的中心位置
+              setClusters(prev => prev.map(c => {
+                if (c.id === clusterId) {
+                  // 更新聚类中的 items 位置（保持相对位置不变）
+                  const updatedItems = (c.items || []).map(item => {
+                    const initialItem = dragStart.items.find(init => init.id === item.id);
+                    if (initialItem) {
+                      return {
+                        ...item,
+                        x: initialItem.x + offsetX,
+                        y: initialItem.y + offsetY,
+                      };
+                    }
+                    return item;
+                  });
+
+                  return {
+                    ...c,
+                    center: newCenter,
+                    items: updatedItems,
+                  };
+                }
+                return c;
+              }));
+
+              // 实时更新画布中的卡片位置（拖动过程中和拖动结束时都更新）
+              if (showOriginalImages) {
+                setImages(prevImages => prevImages.map(img => {
+                  const initialItem = dragStart.items.find(init => init.id === img.id);
+                  if (initialItem) {
+                    return {
+                      ...img,
+                      x: initialItem.x + offsetX,
+                      y: initialItem.y + offsetY,
+                    };
+                  }
+                  return img;
+                }));
+              } else {
+                setOpengraphData(prevOG => prevOG.map(og => {
+                  const initialItem = dragStart.items.find(init => init.id === og.id);
+                  if (initialItem) {
+                    return {
+                      ...og,
+                      x: initialItem.x + offsetX,
+                      y: initialItem.y + offsetY,
+                    };
+                  }
+                  return og;
+                }));
+              }
+
+              // 拖动结束时，清除保存的初始位置
+              if (isDragEnd) {
+                clusterDragStartRef.current.delete(clusterId);
+              }
             }}
           />
         ))}
@@ -879,50 +1034,38 @@ export const PersonalSpace = () => {
                 const updatedClusters = [...clusters, ...result.clusters];
                 
                 // 重新计算所有聚类的位置（避免重叠）
-                const repositionedClusters = calculateMultipleClustersLayout(updatedClusters);
+                const repositionedClusters = calculateMultipleClustersLayout(updatedClusters, {
+                  canvasWidth: 1440,
+                  canvasHeight: 1024,
+                  clusterSpacing: 500, // 增加间距以避免重叠
+                  clusterCenterRadius: 250, // 增加半径以让聚类更分散
+                });
                 setClusters(repositionedClusters);
                 
-                // 从原数据中移除已聚类的卡片
+                // 重要：不移除已聚类的卡片，保留在 opengraphData/images 中
+                // Spring 系统需要这些卡片数据来计算和更新位置
+                
+                // 更新剩余未聚类卡片的位置（补位）
                 const classifiedItemIds = new Set(
                   result.clusters.flatMap(c => (c.items || []).map(item => item.id))
                 );
                 
-                // 更新剩余卡片的位置（补位）
                 if (showOriginalImages) {
                   setImages(prev => {
+                    // 更新剩余未聚类卡片的位置（补位）
                     const remaining = prev.filter(img => !classifiedItemIds.has(img.id));
-                    // 重新计算剩余卡片的圆形布局（从中心开始）
                     return calculateRadialLayout(remaining);
                   });
                 } else {
                   setOpengraphData(prev => {
+                    // 更新剩余未聚类卡片的位置（补位）
                     const remaining = prev.filter(og => !classifiedItemIds.has(og.id));
-                    // 重新计算剩余卡片的圆形布局（从中心开始）
                     return calculateRadialLayout(remaining);
                   });
                 }
                 
-                // 将聚类中的卡片添加到画布（使用重新计算的位置）
-                // 需要为每个聚类内的 items 重新计算圆形布局，并添加错开动画
-                repositionedClusters.slice(clusters.length).forEach((cluster, clusterIndex) => {
-                  const clusterItems = cluster.items || [];
-                  if (clusterItems.length > 0) {
-                    // 使用聚类中心位置重新计算圆形布局
-                    const positionedItems = calculateRadialLayout(clusterItems, {
-                      centerX: cluster.center.x,
-                      centerY: cluster.center.y,
-                    }).map((item, itemIndex) => ({
-                      ...item,
-                      // 添加动画延迟，错开动画时间
-                      animationDelay: calculateStaggerDelay(itemIndex, clusterItems.length) + (clusterIndex * 100),
-                    }));
-                    if (showOriginalImages) {
-                      setImages(prev => [...prev, ...positionedItems]);
-                    } else {
-                      setOpengraphData(prev => [...prev, ...positionedItems]);
-                    }
-                  }
-                });
+                // 注意：已聚类的卡片保留在 opengraphData/images 中
+                // Spring 系统会自动处理这些卡片的位置（基于聚类圆心位置）
                 
                 console.log('[Clustering] AI classify completed:', result.clusters);
               }
@@ -1004,50 +1147,38 @@ export const PersonalSpace = () => {
                 const updatedClusters = [...clusters, ...result.clusters];
                 
                 // 重新计算所有聚类的位置（避免重叠）
-                const repositionedClusters = calculateMultipleClustersLayout(updatedClusters);
+                const repositionedClusters = calculateMultipleClustersLayout(updatedClusters, {
+                  canvasWidth: 1440,
+                  canvasHeight: 1024,
+                  clusterSpacing: 500, // 增加间距以避免重叠
+                  clusterCenterRadius: 250, // 增加半径以让聚类更分散
+                });
                 setClusters(repositionedClusters);
                 
-                // 从原数据中移除已聚类的卡片
+                // 重要：不移除已聚类的卡片，保留在 opengraphData/images 中
+                // Spring 系统需要这些卡片数据来计算和更新位置
+                
+                // 更新剩余未聚类卡片的位置（补位）
                 const clusteredItemIds = new Set(
                   result.clusters.flatMap(c => (c.items || []).map(item => item.id))
                 );
                 
-                // 更新剩余卡片的位置（补位）
                 if (showOriginalImages) {
                   setImages(prev => {
+                    // 更新剩余未聚类卡片的位置（补位）
                     const remaining = prev.filter(img => !clusteredItemIds.has(img.id));
-                    // 重新计算剩余卡片的圆形布局（从中心开始）
                     return calculateRadialLayout(remaining);
                   });
                 } else {
                   setOpengraphData(prev => {
+                    // 更新剩余未聚类卡片的位置（补位）
                     const remaining = prev.filter(og => !clusteredItemIds.has(og.id));
-                    // 重新计算剩余卡片的圆形布局（从中心开始）
                     return calculateRadialLayout(remaining);
                   });
                 }
                 
-                // 将聚类中的卡片添加到画布（使用重新计算的位置）
-                // 需要为每个聚类内的 items 重新计算圆形布局，并添加错开动画
-                repositionedClusters.slice(clusters.length).forEach((cluster, clusterIndex) => {
-                  const clusterItems = cluster.items || [];
-                  if (clusterItems.length > 0) {
-                    // 使用聚类中心位置重新计算圆形布局
-                    const positionedItems = calculateRadialLayout(clusterItems, {
-                      centerX: cluster.center.x,
-                      centerY: cluster.center.y,
-                    }).map((item, itemIndex) => ({
-                      ...item,
-                      // 添加动画延迟，错开动画时间
-                      animationDelay: calculateStaggerDelay(itemIndex, clusterItems.length) + (clusterIndex * 100),
-                    }));
-                    if (showOriginalImages) {
-                      setImages(prev => [...prev, ...positionedItems]);
-                    } else {
-                      setOpengraphData(prev => [...prev, ...positionedItems]);
-                    }
-                  }
-                });
+                // 注意：已聚类的卡片保留在 opengraphData/images 中
+                // Spring 系统会自动处理这些卡片的位置（基于聚类圆心位置）
                 
                 console.log('[Clustering] AI discover completed:', result.clusters);
               }
@@ -1161,51 +1292,104 @@ export const PersonalSpace = () => {
                     if (result && result.ok && result.cluster) {
                       const cluster = result.cluster;
                       
-                      // 添加聚类到列表
+                      // 获取所有卡片数据
+                      const allItems = showOriginalImages ? images : opengraphData;
+                      
+                      // 计算已聚类的卡片 ID
+                      const clusteredItemIds = new Set(
+                        [...clusters, cluster].flatMap(c => (c.items || []).map(item => item.id))
+                      );
+                      
+                      // 获取剩余未聚类的卡片
+                      const remainingItems = allItems.filter(item => !clusteredItemIds.has(item.id));
+                      
+                      // 构建聚类列表：包括新创建的聚类和剩余卡片的默认聚类
                       const updatedClusters = [...clusters, cluster];
                       
-                      // 重新计算所有聚类的位置（避免重叠）
-                      const repositionedClusters = calculateMultipleClustersLayout(updatedClusters);
+                      // 检查是否已存在默认聚类
+                      const existingDefaultClusterIndex = updatedClusters.findIndex(c => c.id === 'default-cluster');
+                      
+                      // 如果有剩余卡片，创建或更新默认聚类
+                      // 按照参考实现：更新旧聚类（去掉被移除的卡片），让剩余卡片重新排布
+                      if (remainingItems.length > 0) {
+                        const defaultCluster = {
+                          id: 'default-cluster',
+                          name: '未分类',
+                          type: 'default',
+                          // ✅ 深拷贝，确保每个字段都被复制，包括坐标
+                          items: remainingItems.map(item => ({
+                            ...item,
+                            id: item.id,
+                            x: item.x,
+                            y: item.y,
+                            width: item.width || (item.is_doc_card ? 200 : 120),
+                            height: item.height || (item.is_doc_card ? 150 : 120),
+                            image: item.image,
+                            title: item.title,
+                            url: item.url,
+                            is_doc_card: item.is_doc_card,
+                            // 保留其他必要字段
+                            text_embedding: item.text_embedding,
+                            image_embedding: item.image_embedding,
+                          })),
+                          center: { x: 720, y: 512 }, // 临时位置，会被重新计算
+                          radius: 200,
+                          item_count: remainingItems.length,
+                        };
+                        if (existingDefaultClusterIndex >= 0) {
+                          // 更新已存在的默认聚类（参考实现：oldCluster.cardIds = oldCluster.cardIds.filter(...)）
+                          updatedClusters[existingDefaultClusterIndex] = defaultCluster;
+                        } else {
+                          // 创建新的默认聚类
+                          updatedClusters.push(defaultCluster);
+                        }
+                      } else if (existingDefaultClusterIndex >= 0) {
+                        // 如果没有剩余卡片，移除默认聚类
+                        updatedClusters.splice(existingDefaultClusterIndex, 1);
+                      }
+                      
+                      // 重新计算所有聚类的位置（避免重叠）- 这设置了聚类圆心的目标位置
+                      // 当有2个聚类时，默认聚类会移动到左侧（水平对称布局）
+                      const repositionedClusters = calculateMultipleClustersLayout(updatedClusters, {
+                        canvasWidth: 1440,
+                        canvasHeight: 1024,
+                        clusterSpacing: 500, // 增加间距以避免重叠
+                        clusterCenterRadius: 250, // 增加半径以让聚类更分散
+                      });
+                      
+                      // 更新聚类列表（Spring 系统会自动处理圆心和卡片位置的动画）
                       setClusters(repositionedClusters);
                       
-                      // 从原数据中移除已聚类的卡片，并更新画布
-                      // 更新剩余卡片的位置（补位）
-                      if (showOriginalImages) {
-                        setImages(prev => {
-                          const remaining = prev.filter(img => !selectedIds.has(img.id));
-                          // 重新计算剩余卡片的圆形布局（从中心开始）
-                          return calculateRadialLayout(remaining);
-                        });
-                      } else {
-                        setOpengraphData(prev => {
-                          const remaining = prev.filter(og => !selectedIds.has(og.id));
-                          // 重新计算剩余卡片的圆形布局（从中心开始）
-                          return calculateRadialLayout(remaining);
+                      // 调试日志
+                      const isDev = process.env.NODE_ENV === 'development';
+                      if (isDev) {
+                        console.log('[Clustering] Updated clusters:', {
+                          total: repositionedClusters.length,
+                          clusterDetails: repositionedClusters.map(c => ({
+                            id: c.id,
+                            name: c.name,
+                            itemCount: c.items?.length || 0,
+                            center: c.center,
+                            itemIds: (c.items || []).map(i => i.id).slice(0, 5), // 只显示前5个
+                          })),
                         });
                       }
                       
-                      // 将聚类中的卡片添加到画布（使用重新计算的位置）
-                      const finalCluster = repositionedClusters[repositionedClusters.length - 1];
-                      const clusterItems = finalCluster.items || [];
-                      if (clusterItems.length > 0) {
-                        // 使用聚类中心位置重新计算圆形布局，并添加错开动画
-                        const positionedItems = calculateRadialLayout(clusterItems, {
-                          centerX: finalCluster.center.x,
-                          centerY: finalCluster.center.y,
-                        }).map((item, itemIndex) => ({
-                          ...item,
-                          // 添加动画延迟，错开动画时间
-                          animationDelay: calculateStaggerDelay(itemIndex, clusterItems.length),
-                        }));
-                        if (showOriginalImages) {
-                          setImages(prev => [...prev, ...positionedItems]);
-                        } else {
-                          setOpengraphData(prev => [...prev, ...positionedItems]);
-                        }
-                      }
+                      // 重要：不移除已聚类的卡片，保留在 opengraphData/images 中
+                      // Spring 系统需要这些卡片数据来计算和更新位置
+                      
+                      // 重要：剩余卡片应该由默认聚类的 Spring 系统处理
+                      // 不需要手动重新计算位置，Spring 系统会根据默认聚类的中心位置自动排列
+                      // 默认聚类的中心位置已经在 calculateMultipleClustersLayout 中重新计算了
+                      
+                      // 注意：不再直接设置卡片位置，Spring 系统会自动处理
+                      // Spring 系统会：
+                      // 1. 根据聚类圆心的目标位置（repositionedClusters[].center）更新圆心 Spring
+                      // 2. 根据当前圆心位置计算卡片目标位置（同心圆排列）
+                      // 3. 更新卡片 Spring，平滑移动到目标位置
                       
                       // 不自动取消选中（根据需求）
-                      console.log('[Clustering] Manual cluster created:', finalCluster);
+                      console.log('[Clustering] Manual cluster created, total clusters:', repositionedClusters.length);
                     }
                   } catch (error) {
                     console.error('[Clustering] Failed to create manual cluster:', error);

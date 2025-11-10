@@ -1,0 +1,86 @@
+{
+  "type": "manual",
+  "timestamp": "20251110_201429",
+  "result": {
+    "id": "cluster-0cfb0d6f",
+    "name": "2",
+    "type": "manual",
+    "items": [
+      {
+        "description": "Hope you enjoy the video! :)Welcome Gamer Nintendo, PS, N64, NES... , you are in a safe place here. Here you can reminisce about your own glory days when you...",
+        "error": null,
+        "image": "https://i.ytimg.com/vi/WZdFoDlt2I8/maxresdefault.jpg",
+        "is_screenshot": false,
+        "site_name": "YouTube",
+        "success": true,
+        "tab_id": 295357095,
+        "tab_title": "a playlist nintendo music to make life feel simple & vibe again - YouTube",
+        "title": "a playlist nintendo music to make life feel simple & vibe again",
+        "url": "https://www.youtube.com/watch?v=WZdFoDlt2I8",
+        "x": 1030,
+        "y": 452,
+        "width": 120,
+        "height": 120,
+        "id": "og-7-1762776813801"
+      },
+      {
+        "description": "Aug 3, 2025 - Godly is a curation of the best web design inspiration, every day. Browse the best e-commerce websites, portfolio websites, animation websites and more.",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/5b/46/51/5b465126e5c855d8b0ba52112399e0a7.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357116,
+        "tab_title": "Vitra: Office Chair Finder — Godly",
+        "title": "Godly is a curation of the best web design inspiration, every day. Browse the best e-commerce websites, portfolio w… in 2025 | Best web design, Web design, Portfolio design",
+        "url": "https://www.pinterest.com/pin/132222939056146251/",
+        "x": 1186,
+        "y": 70,
+        "width": 120,
+        "height": 120,
+        "id": "og-28-1762776813801"
+      },
+      {
+        "description": "Discover the fascinating world of Yuxin Zhou's speculative practice and the delicate balance between research and play. Dive into her creative process and be inspired by her unique approach to art.",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/c4/44/2c/c4442c6914789e8c6e88ac66914ff574.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357115,
+        "tab_title": "Yuxin Zhou on her speculative practice and the balance between research and play",
+        "title": "Exploring Yuxin Zhou's Speculative Practice",
+        "url": "https://www.pinterest.com/pin/694117361355087644/",
+        "x": 861,
+        "y": -166,
+        "width": 120,
+        "height": 120,
+        "id": "og-27-1762776813801"
+      },
+      {
+        "description": "Apr 29, 2025 - This Pin was discovered by Mỹ Huệ. Discover (and save!) your own Pins on Pinterest",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/c9/83/d5/c983d536ad9ee5adf9acc1864cc749df.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357114,
+        "tab_title": "收藏到 그래픽 디자인 포스터",
+        "title": "点击查看大图 [F] in 2025 | Graphic design posters, Coffee poster design, Abstract graphic design",
+        "url": "https://www.pinterest.com/pin/146085581659145686/",
+        "x": 459,
+        "y": -166,
+        "width": 120,
+        "height": 120,
+        "id": "og-26-1762776813801"
+      }
+    ],
+    "center": {
+      "x": 884.0,
+      "y": 47.5
+    },
+    "radius": 200,
+    "created_at": "2025-11-10T20:14:29.400324",
+    "item_count": 4
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "type": "manual",
+  "timestamp": "20251110_195400",
+  "result": {
+    "id": "cluster-f42e0433",
+    "name": "99",
+    "type": "manual",
+    "items": [
+      {
+        "description": "Jul 6, 2025 - The world's leading platform for Korean designers. Download the app and get a 10% off coupon! 3,000+ local brands. We ship to 44+ countries.",
+        "error": null,
+        "image": "https://i.pinimg.com/736x/22/65/4e/22654e65c19be7186cdbf856c6854b86.jpg",
+        "is_screenshot": false,
+        "site_name": "Pinterest",
+        "success": true,
+        "tab_id": 295357107,
+        "tab_title": "[Blue] Plants Patch iPhone Case",
+        "title": "[Blue] Plants Patch iPhone Case in 2025 | Iphone cases, Packaging design inspiration, Merchandise design",
+        "url": "https://www.pinterest.com/pin/4603030750029368576/",
+        "x": 272.85485077358163,
+        "y": 949.0066038407758,
+        "width": 120,
+        "height": 120,
+        "id": "og-19-1762775574296"
+      }
+    ],
+    "center": {
+      "x": 272.85485077358163,
+      "y": 949.0066038407758
+    },
+    "radius": 200,
+    "created_at": "2025-11-10T19:54:00.163278",
+    "item_count": 1
+  }
+}

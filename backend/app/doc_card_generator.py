@@ -101,8 +101,8 @@ def generate_doc_card_svg(
     url: str,
     site_name: str = "",
     description: str = "",
-    width: int = 320,  # 调整为更适合画板的尺寸
-    height: int = 240,  # 调整为更适合画板的尺寸
+    width: int = 200,  # 缩小文档卡片尺寸
+    height: int = 150,  # 缩小文档卡片尺寸
 ) -> str:
     """
     生成文档卡片的 SVG 图片（Base64 编码）
