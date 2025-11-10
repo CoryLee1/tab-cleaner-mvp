@@ -56,6 +56,24 @@
   box-shadow: 0 4px 12px rgba(0,0,0,0.25);
 }
 
+/* 文档卡片样式（更大的尺寸，更明显的边框，突出显示标题和类型） */
+.personal-space .canvas img.opengraph-image.doc-card {
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  object-fit: contain; /* 保持 SVG 完整显示 */
+  background-color: #ffffff; /* 白色背景，确保 SVG 清晰 */
+  /* 确保文字清晰可读 */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+.personal-space .canvas img.opengraph-image.doc-card:hover {
+  transform: scale(1.05); /* 稍微减小缩放，避免过大 */
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  z-index: 10; /* 悬停时提升层级 */
+}
+
 .personal-space .clipboard {
   aspect-ratio: 0.67;
   height: 126px;

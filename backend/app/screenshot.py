@@ -38,30 +38,56 @@ def is_doc_like_url(url: str) -> bool:
     """
     url_lower = url.lower()
     doc_keywords = [
+        # 代码托管和文档平台
         "github.com",
+        "gitlab.com",
         "readthedocs.io",
+        "stackoverflow.com",
+        "stackexchange.com",
         "/docs/",
         "developer.",
         "dev.",
         "documentation",
         "wiki",
-        "stackoverflow.com",
-        "stackexchange.com",
-        "jira",
-        "confluence",
+        
+        # 协作和文档工具
         "notion.so",
-        "gitlab.com",
+        "notion.site",
+        "feishu.cn",  # 飞书
+        "feishuapp.com",
+        "larkoffice.com",
+        "docs.google.com",  # Google Docs
+        "docs.googleusercontent.com",
+        "confluence",
+        "jira",
+        "atlassian.net",
+        
+        # 中文文档平台
+        "docs.xiaohongshu.com",  # 小红书文档
+        "xiaohongshu.com/doc/",
+        "mp.weixin.qq.com",  # 微信公众号
+        "zhihu.com",
+        "juejin.cn",
+        "segmentfault.com",
+        "csdn.net",
+        
+        # 其他文档平台
+        "medium.com",
+        "dev.to",
+        "hashnode.com",
+        "reddit.com/r/",
     ]
     return any(keyword in url_lower for keyword in doc_keywords)
 
 
-async def take_screenshot(url: str, timeout: int = SCREENSHOT_TIMEOUT) -> Optional[bytes]:
+async def take_screenshot(url: str, timeout: int = SCREENSHOT_TIMEOUT, wait_time: float = 2.0) -> Optional[bytes]:
     """
     使用 Playwright 截取网页截图
     
     Args:
         url: 要截图的网页 URL
         timeout: 超时时间（毫秒）
+        wait_time: 额外等待时间（秒），用于等待动态内容加载
     
     Returns:
         截图的二进制数据（PNG 格式），失败返回 None
@@ -75,32 +101,57 @@ async def take_screenshot(url: str, timeout: int = SCREENSHOT_TIMEOUT) -> Option
             # 启动浏览器（无头模式）
             browser = await p.chromium.launch(headless=True)
             try:
-                # 创建新页面
+                # 创建新页面，设置更真实的浏览器环境
                 context = await browser.new_context(
                     viewport={"width": SCREENSHOT_WIDTH, "height": SCREENSHOT_HEIGHT},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    locale="zh-CN",  # 设置中文环境
+                    timezone_id="Asia/Shanghai",  # 设置时区
                 )
                 page = await context.new_page()
                 
-                # 导航到页面并等待加载
-                await page.goto(url, wait_until="networkidle", timeout=timeout)
+                # 导航到页面
+                print(f"[Screenshot] Navigating to {url}...")
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+                except Exception as nav_error:
+                    print(f"[Screenshot] Navigation warning: {nav_error}, continuing...")
                 
-                # 等待页面完全加载（额外等待 1 秒，确保动态内容加载）
-                await asyncio.sleep(1)
+                # 等待网络空闲（如果可能）
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    # 如果网络空闲超时，继续执行
+                    pass
+                
+                # 额外等待时间，确保动态内容加载（特别是需要 JS 渲染的页面）
+                if wait_time > 0:
+                    print(f"[Screenshot] Waiting {wait_time}s for dynamic content...")
+                    await asyncio.sleep(wait_time)
+                
+                # 滚动到页面顶部，确保截图从头开始
+                await page.evaluate("window.scrollTo(0, 0)")
+                
+                # 等待一小段时间，确保滚动完成
+                await asyncio.sleep(0.5)
                 
                 # 截取整页截图
+                print(f"[Screenshot] Taking screenshot...")
                 screenshot_bytes = await page.screenshot(
                     type="png",
                     full_page=True,  # 截取整页
                     timeout=timeout
                 )
                 
+                print(f"[Screenshot] Screenshot captured: {len(screenshot_bytes)} bytes")
                 await context.close()
                 return screenshot_bytes
             finally:
                 await browser.close()
     except Exception as e:
         print(f"[Screenshot] Failed to take screenshot for {url}: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -161,17 +212,27 @@ def process_screenshot_to_base64(screenshot_bytes: bytes, max_dimension: int = 1
         return None
 
 
-async def get_screenshot_as_base64(url: str) -> Optional[str]:
+async def get_screenshot_as_base64(url: str, wait_time: float = 2.0) -> Optional[str]:
     """
     获取网页截图并转换为 Base64 格式
     
     Args:
         url: 要截图的网页 URL
+        wait_time: 额外等待时间（秒），用于等待动态内容加载
     
     Returns:
         Base64 编码的图片字符串，失败返回 None
     """
-    screenshot_bytes = await take_screenshot(url)
+    # 根据 URL 类型调整等待时间
+    url_lower = url.lower()
+    if any(kw in url_lower for kw in ["notion.so", "feishu", "docs.google.com"]):
+        # 协作工具通常需要更长的加载时间
+        wait_time = max(wait_time, 3.0)
+    elif any(kw in url_lower for kw in ["mp.weixin.qq.com", "docs.xiaohongshu.com"]):
+        # 中文平台可能需要更长的加载时间
+        wait_time = max(wait_time, 2.5)
+    
+    screenshot_bytes = await take_screenshot(url, wait_time=wait_time)
     if not screenshot_bytes:
         return None
     

@@ -99,11 +99,12 @@ export const PersonalSpace = () => {
             }
             
             // 过滤掉失败的数据
+            // 注意：文档卡片（is_doc_card）即使没有 success=true，只要有 image 也应该显示
             const validOG = ogData.filter(item => 
               item && 
               typeof item === 'object' && 
-              item.success && 
-              item.image
+              (item.success || item.is_doc_card) &&  // 成功或文档卡片
+              item.image  // 必须有图片（截图或文档卡片）
             );
             
             if (validOG.length > 0) {
@@ -666,17 +667,22 @@ export const PersonalSpace = () => {
           
           // 直接使用 DraggableImage，位置由组件内部管理
           // 如果有 animationDelay，传递给组件用于错开动画
+          // 文档卡片使用更大的尺寸以便显示更多信息（标题、类型等）
+          const isDocCard = og.is_doc_card || false;
+          const cardWidth = isDocCard ? 320 : (og.width || 120);  // 增大文档卡片尺寸
+          const cardHeight = isDocCard ? 240 : (og.height || 120);  // 增大文档卡片尺寸
+          
           return (
             <DraggableImage
               key={og.id}
               id={og.id}
-              className="opengraph-image"
+              className={`opengraph-image ${isDocCard ? 'doc-card' : ''}`}
               src={og.image || 'https://via.placeholder.com/120'}
               alt={og.title || og.url}
               initialX={x}
               initialY={y}
-              width={og.width || 120}
-              height={og.height || 120}
+              width={cardWidth}
+              height={cardHeight}
               animationDelay={og.animationDelay || 0}
               isSelected={selectedIds.has(og.id)}
               onSelect={(id, isMultiSelect) => {
