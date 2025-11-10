@@ -723,56 +723,69 @@ export const PersonalSpace = () => {
         ))}
 
         {/* OpenGraph 图片（使用 DraggableImage，支持拖拽和工具） */}
-        {!showOriginalImages && opengraphData && Array.isArray(opengraphData) && opengraphData.length > 0 && opengraphData.map((og, index) => {
-          // 确保有必要的字段
-          if (!og || typeof og !== 'object' || !og.id) {
-            return null;
-          }
-          // 如果没有 x, y，使用默认值（中心位置）
-          const x = og.x ?? 720;
-          const y = og.y ?? 512;
+        {!showOriginalImages && opengraphData && Array.isArray(opengraphData) && opengraphData.length > 0 && (() => {
+          // 找到相似度最高的卡片（搜索结果已按相似度排序，第一个就是最高的）
+          // 只在有搜索查询且有相似度数据时高亮
+          const hasSearchResults = searchQuery.trim() && opengraphData.some(og => og.similarity !== undefined && og.similarity > 0);
+          const topResult = hasSearchResults
+            ? opengraphData.find(og => og.similarity !== undefined && og.similarity > 0)
+            : null;
+          const topResultId = topResult?.id;
           
-          // 直接使用 DraggableImage，位置由组件内部管理
-          // 如果有 animationDelay，传递给组件用于错开动画
-          // 文档卡片使用更大的尺寸以便显示更多信息（标题、类型等）
-          const isDocCard = og.is_doc_card || false;
-          const cardWidth = isDocCard ? 200 : (og.width || 120);  // 缩小文档卡片尺寸
-          const cardHeight = isDocCard ? 150 : (og.height || 120);  // 缩小文档卡片尺寸
-          
-          return (
-            <DraggableImage
-              key={og.id}
-              id={og.id}
-              className={`opengraph-image ${isDocCard ? 'doc-card' : ''}`}
-              src={og.image || 'https://via.placeholder.com/120'}
-              alt={og.title || og.url}
-              initialX={x}
-              initialY={y}
-              width={cardWidth}
-              height={cardHeight}
-              animationDelay={og.animationDelay || 0}
-              isSelected={selectedIds.has(og.id)}
-              onSelect={(id, isMultiSelect) => {
-                handleSelect(id, isMultiSelect);
-              }}
-              zoom={zoom}
-              pan={pan}
-              onDragEnd={(id, x, y) => {
-                handleDragEnd(id, x, y);
-              }}
-              onClick={() => {
-                // 快速双击显示 OpenGraph 卡片（300ms 内两次点击同一图片）
-                const now = Date.now();
-                if (lastOGClickRef.current.id === og.id && now - lastOGClickRef.current.time < 300) {
-                  setSelectedOG(og);
-                  lastOGClickRef.current = { time: 0, id: null };
-                } else {
-                  lastOGClickRef.current = { time: now, id: og.id };
-                }
-              }}
-            />
-          );
-        })}
+          return opengraphData.map((og, index) => {
+            // 确保有必要的字段
+            if (!og || typeof og !== 'object' || !og.id) {
+              return null;
+            }
+            // 如果没有 x, y，使用默认值（中心位置）
+            const x = og.x ?? 720;
+            const y = og.y ?? 512;
+            
+            // 直接使用 DraggableImage，位置由组件内部管理
+            // 如果有 animationDelay，传递给组件用于错开动画
+            // 文档卡片使用更大的尺寸以便显示更多信息（标题、类型等）
+            const isDocCard = og.is_doc_card || false;
+            const cardWidth = isDocCard ? 200 : (og.width || 120);  // 缩小文档卡片尺寸
+            const cardHeight = isDocCard ? 150 : (og.height || 120);  // 缩小文档卡片尺寸
+            
+            // 判断是否为最接近的搜索结果
+            const isTopResult = topResultId === og.id;
+            
+            return (
+              <DraggableImage
+                key={og.id}
+                id={og.id}
+                className={`opengraph-image ${isDocCard ? 'doc-card' : ''} ${isTopResult ? 'top-result' : ''}`}
+                src={og.image || 'https://via.placeholder.com/120'}
+                alt={og.title || og.url}
+                initialX={x}
+                initialY={y}
+                width={cardWidth}
+                height={cardHeight}
+                animationDelay={og.animationDelay || 0}
+                isSelected={selectedIds.has(og.id)}
+                onSelect={(id, isMultiSelect) => {
+                  handleSelect(id, isMultiSelect);
+                }}
+                zoom={zoom}
+                pan={pan}
+                onDragEnd={(id, x, y) => {
+                  handleDragEnd(id, x, y);
+                }}
+                onClick={() => {
+                  // 快速双击显示 OpenGraph 卡片（300ms 内两次点击同一图片）
+                  const now = Date.now();
+                  if (lastOGClickRef.current.id === og.id && now - lastOGClickRef.current.time < 300) {
+                    setSelectedOG(og);
+                    lastOGClickRef.current = { time: 0, id: null };
+                  } else {
+                    lastOGClickRef.current = { time: now, id: og.id };
+                  }
+                }}
+              />
+            );
+          });
+        })()}
 
         {/* 聚类中心标签 */}
         {clusters.map((cluster) => (

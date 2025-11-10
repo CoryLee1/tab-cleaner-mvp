@@ -22,8 +22,8 @@ export const calculateMultipleClustersLayout = (clusters, options = {}) => {
   const {
     canvasWidth = 1440,
     canvasHeight = 1024,
-    clusterSpacing = 500, // 聚类之间的最小间距（增加以避免重叠）
-    clusterCenterRadius = 250, // 聚类圆心到画布中心的距离（增加以让聚类更分散）
+    clusterSpacing = 1000, // 聚类之间的最小间距（增加以避免重叠）
+    clusterCenterRadius = 500, // 聚类圆心到画布中心的距离（增加以让聚类更分散）
   } = options;
 
   // 计算每个聚类的半径（基于其 items 数量）

@@ -74,6 +74,40 @@
   z-index: 10; /* 悬停时提升层级 */
 }
 
+/* 搜索结果最接近的卡片高亮样式 */
+.personal-space .canvas img.opengraph-image.top-result {
+  box-shadow: 0 0 0 4px rgba(255, 193, 7, 0.8),
+              0 0 20px 8px rgba(255, 193, 7, 0.5),
+              0 4px 16px rgba(0,0,0,0.3);
+  outline: 3px solid #ffc107;
+  outline-offset: 3px;
+  z-index: 150; /* 提升到最上层（高于选中状态 z-index: 100，低于拖拽状态 z-index: 200） */
+  transform: scale(1.08); /* 稍微放大，更突出 */
+  border: 2px solid #ffc107;
+  animation: topResultPulse 2s ease-in-out infinite;
+}
+
+.personal-space .canvas img.opengraph-image.top-result:hover {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 5px rgba(255, 193, 7, 0.9),
+              0 0 30px 12px rgba(255, 193, 7, 0.6),
+              0 6px 20px rgba(0,0,0,0.4);
+}
+
+/* 高亮卡片的呼吸动画 */
+@keyframes topResultPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 4px rgba(255, 193, 7, 0.8),
+                0 0 20px 8px rgba(255, 193, 7, 0.5),
+                0 4px 16px rgba(0,0,0,0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(255, 193, 7, 0.9),
+                0 0 25px 10px rgba(255, 193, 7, 0.6),
+                0 4px 16px rgba(0,0,0,0.3);
+  }
+}
+
 .personal-space .clipboard {
   aspect-ratio: 0.67;
   height: 126px;
