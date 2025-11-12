@@ -23,7 +23,9 @@ app.add_middleware(
 
 # serve static pages (for share link)
 static_dir = Path(__file__).parent / "static"
-app.mount("/public", StaticFiles(directory=static_dir, html=True), name="public")
+# 只有当 static 目录存在时才挂载
+if static_dir.exists():
+    app.mount("/public", StaticFiles(directory=static_dir, html=True), name="public")
 
 @app.get("/")
 def root():
