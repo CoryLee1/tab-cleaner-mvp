@@ -12,72 +12,94 @@ export const useMasonryLayout = (viewMode, opengraphData) => {
   const masonryInstanceRef = useRef(null);
 
   useEffect(() => {
-    if (viewMode === 'masonry' && masonryRef.current && opengraphData.length > 0) {
-      // 销毁旧的实例
-      if (masonryInstanceRef.current) {
-        masonryInstanceRef.current.destroy();
-      }
+    if (viewMode === 'masonry' && opengraphData && opengraphData.length > 0) {
+      // 等待 DOM 更新，确保 masonryRef.current 已绑定
+      const initMasonry = () => {
+        if (!masonryRef.current) {
+          console.warn('[useMasonryLayout] masonryRef.current is null, retrying...');
+          setTimeout(initMasonry, 100);
+          return;
+        }
 
-      // 计算每列的宽度（确保一行最多 5 个卡片）
-      const containerWidth = 1440 - 40; // 减去左右 padding
-      const gutter = 16;
-      const maxColumns = 5;
-      const columnWidth = (containerWidth - (gutter * (maxColumns - 1))) / maxColumns;
+        console.log('[useMasonryLayout] Initializing masonry with', opengraphData.length, 'items');
+        
+        // 销毁旧的实例
+        if (masonryInstanceRef.current) {
+          masonryInstanceRef.current.destroy();
+        }
 
-      // 创建一个隐藏的列宽元素用于 Masonry
-      let columnWidthElement = masonryRef.current.querySelector('.masonry-column-width');
-      if (!columnWidthElement) {
-        columnWidthElement = document.createElement('div');
-        columnWidthElement.className = 'masonry-column-width';
-        columnWidthElement.style.width = `${columnWidth}px`;
-        columnWidthElement.style.visibility = 'hidden';
-        columnWidthElement.style.position = 'absolute';
-        masonryRef.current.appendChild(columnWidthElement);
-      } else {
-        columnWidthElement.style.width = `${columnWidth}px`;
-      }
+        // 计算每列的宽度（确保一行最多 5 个卡片）
+        const containerWidth = 1440 - 40; // 减去左右 padding
+        const gutter = 16;
+        const maxColumns = 5;
+        const columnWidth = (containerWidth - (gutter * (maxColumns - 1))) / maxColumns;
 
-      // 初始化新的 Masonry 实例
-      masonryInstanceRef.current = new Masonry(masonryRef.current, {
-        itemSelector: '.masonry-item',
-        columnWidth: '.masonry-column-width',
-        percentPosition: false,
-        gutter: gutter,
-        fitWidth: true, // 居中显示
-      });
+        // 创建一个隐藏的列宽元素用于 Masonry
+        let columnWidthElement = masonryRef.current.querySelector('.masonry-column-width');
+        if (!columnWidthElement) {
+          columnWidthElement = document.createElement('div');
+          columnWidthElement.className = 'masonry-column-width';
+          columnWidthElement.style.width = `${columnWidth}px`;
+          columnWidthElement.style.visibility = 'hidden';
+          columnWidthElement.style.position = 'absolute';
+          masonryRef.current.appendChild(columnWidthElement);
+        } else {
+          columnWidthElement.style.width = `${columnWidth}px`;
+        }
 
-      // 当所有图片加载完成后重新布局
-      const images = masonryRef.current.querySelectorAll('.masonry-item img');
-      let loadedCount = 0;
-      const totalImages = images.length;
+        // 初始化新的 Masonry 实例
+        masonryInstanceRef.current = new Masonry(masonryRef.current, {
+          itemSelector: '.masonry-item',
+          columnWidth: '.masonry-column-width',
+          percentPosition: false,
+          gutter: gutter,
+          fitWidth: true, // 居中显示
+        });
 
-      if (totalImages === 0) {
-        // 如果没有图片，立即布局
-        masonryInstanceRef.current.layout();
-      } else {
-        images.forEach((img) => {
-          if (img.complete) {
-            loadedCount++;
-            if (loadedCount === totalImages) {
-              masonryInstanceRef.current.layout();
-            }
-          } else {
-            img.addEventListener('load', () => {
+        // 当所有图片加载完成后重新布局
+        const images = masonryRef.current.querySelectorAll('.masonry-item img');
+        let loadedCount = 0;
+        const totalImages = images.length;
+
+        if (totalImages === 0) {
+          // 如果没有图片，立即布局
+          masonryInstanceRef.current.layout();
+        } else {
+          images.forEach((img) => {
+            if (img.complete) {
               loadedCount++;
               if (loadedCount === totalImages) {
                 masonryInstanceRef.current.layout();
               }
-            });
-          }
-        });
-      }
-
-      return () => {
+            } else {
+              img.addEventListener('load', () => {
+                loadedCount++;
+                if (loadedCount === totalImages) {
+                  masonryInstanceRef.current.layout();
+                }
+              });
+            }
+          });
+        }
+      };
+      
+      // 清理函数
+      const cleanup = () => {
         if (masonryInstanceRef.current) {
           masonryInstanceRef.current.destroy();
           masonryInstanceRef.current = null;
         }
       };
+      
+      initMasonry();
+      
+      return cleanup;
+    } else {
+      console.log('[useMasonryLayout] Skipping initialization:', {
+        viewMode,
+        hasRef: !!masonryRef.current,
+        dataLength: opengraphData?.length || 0,
+      });
     }
   }, [viewMode, opengraphData]);
 

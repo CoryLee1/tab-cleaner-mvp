@@ -8,8 +8,11 @@ import { OpenGraphCard } from "./OpenGraphCard";
 import { SelectionPanel } from "./SelectionPanel";
 import { ViewButtons } from "./ViewButtons";
 import { MasonryGrid } from "./MasonryGrid";
+import { SessionMasonryGrid } from "./SessionMasonryGrid";
 import { RadialCanvas } from "./RadialCanvas";
 import { AIClusteringPanel } from "./AIClusteringPanel";
+import { ScrollSpyIndicator } from "./ScrollSpyIndicator";
+import { useSessionManager } from "../../hooks/useSessionManager";
 import { useHistory } from "../../hooks/useHistory";
 import { useSearch } from "../../hooks/useSearch";
 import { calculateRadialLayout } from "../../utils/radialLayout";
@@ -71,9 +74,31 @@ export const PersonalSpace = () => {
   const clusterDragStartRef = useRef(new Map()); // 拖动开始时保存每个聚类的初始位置和卡片位置
 
   // 视图模式：'radial' 或 'masonry'
-  const [viewMode, setViewMode] = useState('radial');
+  const [viewMode, setViewMode] = useState('masonry'); // 默认使用 masonry 视图
+
+  // Session 管理（使用 hook）
+  const {
+    sessions,
+    currentSessionId,
+    setCurrentSessionId,
+    isLoading: isSessionsLoading,
+    createSession,
+    updateSession,
+    deleteSession,
+    getCurrentSession,
+    renameSession,
+  } = useSessionManager();
 
   // 搜索相关状态（使用 hook）
+  // 注意：对于 masonry 视图，搜索应该基于所有 sessions 的数据
+  // 对于 radial 视图，搜索基于当前 session 的数据
+  const allOpengraphData = sessions.flatMap(s => s.opengraphData || []);
+  const currentSession = getCurrentSession();
+  const currentSessionOpengraphData = currentSession ? (currentSession.opengraphData || []) : [];
+  
+  // 根据视图模式选择搜索数据源
+  const searchDataSource = viewMode === 'masonry' ? allOpengraphData : currentSessionOpengraphData;
+  
   const {
     searchQuery,
     setSearchQuery,
@@ -82,70 +107,131 @@ export const PersonalSpace = () => {
     searchResults,
     performSearch,
     clearSearch,
-  } = useSearch(opengraphData);
+  } = useSearch(searchDataSource);
+  
+  // Radial 视图使用的数据（当前 session）
+  // 如果当前 session 有数据，使用 session 数据；否则使用旧的 opengraphData（向后兼容）
+  const radialOpengraphData = viewMode === 'radial' 
+    ? (currentSessionOpengraphData.length > 0 ? currentSessionOpengraphData : opengraphData)
+    : opengraphData;
 
-  // 从 storage 加载 OpenGraph 数据
+  // 当切换到 radial 视图或切换 session 时，同步更新 clusters 和 opengraphData
   useEffect(() => {
+    if (viewMode === 'radial' && radialOpengraphData.length > 0) {
+      // 计算放射状布局位置
+      const positionedOG = calculateRadialLayout(radialOpengraphData, {
+        centerX: 720,
+        centerY: 512,
+      }).map((og, index) => ({
+        ...og,
+        id: og.id || `og-${index}-${Date.now()}`,
+      }));
+      
+      // 更新 opengraphData（用于 Radial 视图）
+      setOpengraphData(positionedOG);
+      setShowOriginalImages(false);
+      
+      // 更新 clusters：如果有现有聚类，保留；否则创建默认聚类
+      setClusters(prev => {
+        if (prev.length === 0) {
+          // 创建默认聚类包含所有卡片
+          return [{
+            id: 'default-cluster',
+            name: '未分类',
+            type: 'default',
+            items: positionedOG,
+            center: { x: 720, y: 512 },
+            radius: 200,
+            item_count: positionedOG.length,
+          }];
+        } else {
+          // 更新现有聚类中的 items，确保数据同步
+          return prev.map(cluster => {
+            // 如果聚类中的 items 不在当前数据中，需要更新
+            const updatedItems = cluster.items.filter(item => 
+              positionedOG.some(og => og.id === item.id)
+            );
+            return {
+              ...cluster,
+              items: updatedItems,
+              item_count: updatedItems.length,
+            };
+          }).filter(cluster => cluster.item_count > 0);
+        }
+      });
+    }
+  }, [viewMode, currentSessionId, radialOpengraphData]);
+
+  // 从 storage 加载数据（兼容旧数据，但优先使用 sessions）
+  // 当 sessions 加载完成后，检查是否需要迁移旧数据
+  useEffect(() => {
+    // 等待 sessions 加载完成
+    if (isSessionsLoading) {
+      return;
+    }
+
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['opengraphData'], (result) => {
+      chrome.storage.local.get(['opengraphData', 'currentSessionId'], (result) => {
         try {
-          if (result.opengraphData) {
-            // 处理两种可能的数据结构：{data: [...]} 或直接是数组
+          // 如果有旧的 opengraphData 但没有 sessions，迁移到第一个 session
+          if (sessions.length === 0 && result.opengraphData) {
             const ogData = Array.isArray(result.opengraphData) 
               ? result.opengraphData 
               : (result.opengraphData.data || []);
             
-            console.log('[PersonalSpace] Loaded OpenGraph data:', ogData);
-            
-            // 确保 ogData 是数组
-            if (!Array.isArray(ogData)) {
-              console.warn('[PersonalSpace] OpenGraph data is not an array:', ogData);
-              return;
+            if (Array.isArray(ogData) && ogData.length > 0) {
+              console.log('[PersonalSpace] Migrating old opengraphData to session...', ogData.length, 'items');
+              
+              // 过滤掉失败的数据
+              const validOG = ogData.filter(item => 
+                item && 
+                typeof item === 'object' && 
+                (item.success || item.is_doc_card) &&  
+                (item.image || (item.title && item.title !== item.url))
+              );
+              
+              if (validOG.length > 0) {
+                // 创建第一个 session 包含旧数据
+                const newSession = createSession(validOG);
+                console.log('[PersonalSpace] Created session from old data:', newSession);
+                
+                // 同时设置 opengraphData 用于 Radial 视图兼容
+                const positionedOG = calculateRadialLayout(validOG, {
+                  centerX: 720,
+                  centerY: 512,
+                }).map((og, index) => ({
+                  ...og,
+                  id: og.id || `og-${index}-${Date.now()}`,
+                }));
+                setOpengraphData(positionedOG);
+                setShowOriginalImages(false);
+                
+                // 创建默认聚类
+                setTimeout(() => {
+                  setClusters(prev => {
+                    if (prev.length === 0) {
+                      return [{
+                        id: 'default-cluster',
+                        name: '未分类',
+                        type: 'default',
+                        items: positionedOG,
+                        center: { x: 720, y: 512 },
+                        radius: 200,
+                        item_count: positionedOG.length,
+                      }];
+                    }
+                    return prev;
+                  });
+                }, 100);
+              }
             }
-            
-            // 过滤掉失败的数据
-            // 注意：文档卡片（is_doc_card）即使没有 success=true，只要有 image 也应该显示
-            // 普通网页即使没有图片，只要有 OpenGraph 数据也应该显示（可以显示标题等）
-            const validOG = ogData.filter(item => 
-              item && 
-              typeof item === 'object' && 
-              (item.success || item.is_doc_card) &&  // 成功或文档卡片
-              (item.image || (item.title && item.title !== item.url))  // 必须有图片，或者有有效的标题（不是URL）
-            );
-            
-            if (validOG.length > 0) {
-              setShowOriginalImages(false); // 隐藏原有图片
-              
-              // 计算放射状布局位置，并为每个 OpenGraph 图片生成唯一 ID
-              // 明确指定中心点为画布中心 (720, 512)，确保卡片居中
-              const positionedOG = calculateRadialLayout(validOG, {
-                centerX: 720,  // 画布中心 X (1440 / 2)
-                centerY: 512,  // 画布中心 Y (1024 / 2)
-              }).map((og, index) => ({
-                ...og,
-                id: `og-${index}-${Date.now()}`, // 生成唯一 ID
-              }));
-              setOpengraphData(positionedOG);
-              
-              // 初始状态：如果没有聚类，创建一个默认聚类包含所有卡片
-              // 使用 useEffect 确保在 opengraphData 更新后执行
-              setTimeout(() => {
-                setClusters(prev => {
-                  if (prev.length === 0) {
-                    const defaultCluster = {
-                      id: 'default-cluster',
-                      name: '未分类',
-                      type: 'default',
-                      items: positionedOG,
-                      center: { x: 720, y: 512 },
-                      radius: 200,
-                      item_count: positionedOG.length,
-                    };
-                    return [defaultCluster];
-                  }
-                  return prev;
-                });
-              }, 100);
+          }
+          
+          // 设置当前 session（如果有）
+          if (result.currentSessionId && sessions.length > 0) {
+            const sessionExists = sessions.some(s => s.id === result.currentSessionId);
+            if (sessionExists) {
+              setCurrentSessionId(result.currentSessionId);
             }
           }
         } catch (error) {
@@ -153,7 +239,7 @@ export const PersonalSpace = () => {
         }
       });
     }
-  }, []);
+  }, [isSessionsLoading, sessions.length, createSession, setCurrentSessionId]);
 
   // Spring 动画：更新卡片位置
   const updateCardPosition = useCallback((cardId, x, y) => {
@@ -969,22 +1055,71 @@ export const PersonalSpace = () => {
         }
       }, [isClustering, showOriginalImages, images, opengraphData, opengraphWithEmbeddings, clusters]);
 
+      // Session 容器 ref（用于 ScrollSpy）
+      const sessionContainerRef = useRef(null);
+
+      // 处理 Session 删除
+      const handleSessionDelete = useCallback((sessionId, selectedCardIds = null) => {
+        if (selectedCardIds && selectedCardIds.length > 0) {
+          // 删除选中的卡片
+          const session = sessions.find(s => s.id === sessionId);
+          if (session) {
+            const updatedData = session.opengraphData.filter(item => !selectedCardIds.includes(item.id));
+            updateSession(sessionId, { opengraphData: updatedData });
+          }
+        } else {
+          // 删除整个 session
+          deleteSession(sessionId);
+        }
+      }, [sessions, updateSession, deleteSession]);
+
+      // 处理 Session 全部打开
+      const handleSessionOpenAll = useCallback((sessionId, selectedCardIds = null) => {
+        const session = sessions.find(s => s.id === sessionId);
+        if (!session) return;
+
+        const urlsToOpen = selectedCardIds && selectedCardIds.length > 0
+          ? session.opengraphData
+              .filter(item => selectedCardIds.includes(item.id))
+              .map(item => item.url)
+              .filter(Boolean)
+          : session.opengraphData
+              .map(item => item.url)
+              .filter(Boolean);
+
+        urlsToOpen.forEach(url => {
+          chrome.tabs.create({ url });
+        });
+      }, [sessions]);
+
       return (
         <div className="personal-space" ref={containerRef}>
           {viewMode === 'masonry' ? (
-            <MasonryGrid
-              opengraphData={!showOriginalImages ? opengraphData : []}
-              searchQuery={searchQuery}
-              onCardClick={handleCardDoubleClick}
-              lastOGClickRef={lastOGClickRef}
-            />
+            <>
+              <SessionMasonryGrid
+                sessions={sessions}
+                searchQuery={searchQuery}
+                onCardClick={handleCardDoubleClick}
+                onSessionDelete={handleSessionDelete}
+                onSessionOpenAll={handleSessionOpenAll}
+                searchBarHeight={125} // 搜索栏高度 + 间距
+                containerRef={sessionContainerRef}
+              />
+              {/* Scroll Spy Indicator */}
+              {sessions.length > 1 && (
+                <ScrollSpyIndicator 
+                  sessions={sessions} 
+                  containerRef={sessionContainerRef}
+                />
+              )}
+            </>
           ) : (
             <RadialCanvas
               canvasRef={canvasRef}
               containerRef={containerRef}
               showOriginalImages={showOriginalImages}
               images={images}
-              opengraphData={opengraphData}
+              opengraphData={radialOpengraphData} // 使用当前 session 的数据
               searchQuery={searchQuery}
               selectedIds={selectedIds}
               clusters={clusters}
@@ -1011,7 +1146,17 @@ export const PersonalSpace = () => {
           )}
 
       <div className="space-function">
-        <div className="add-new-session">
+        <div 
+          className="add-new-session"
+          onClick={() => {
+            // 创建新的空 session
+            const newSession = createSession([]);
+            setCurrentSessionId(newSession.id);
+            // 切换到 masonry 视图
+            setViewMode('masonry');
+          }}
+          style={{ cursor: 'pointer' }}
+        >
           <img className="image-10" alt="Image" src={getImageUrl("3.svg")} />
 
           <div className="text-wrapper-16">加新洗衣筐</div>

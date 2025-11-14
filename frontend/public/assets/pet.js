@@ -606,22 +606,59 @@
       });
     }
 
-    document.body.appendChild(petContainer);
+    // 确保 body 存在后再添加
+    if (document.body) {
+      document.body.appendChild(petContainer);
+      // 初始状态：隐藏
+      petContainer.style.display = "none";
+      isPetVisible = false;
+    } else {
+      // 如果 body 还没准备好，等待 DOMContentLoaded
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          if (document.body && petContainer) {
+            document.body.appendChild(petContainer);
+            petContainer.style.display = "none";
+            isPetVisible = false;
+          }
+        });
+      } else {
+        // 如果已经加载完成，直接添加
+        if (petContainer) {
+          document.body.appendChild(petContainer);
+          petContainer.style.display = "none";
+          isPetVisible = false;
+        }
+      }
+    }
   }
 
   // 显示宠物
   async function showPet() {
-    if (!petContainer) await createPet();
-    petContainer.style.display = "block";
-    isPetVisible = true;
-    isButtonsVisible = false; // 默认隐藏按钮
-    const shadow = petContainer.shadowRoot;
-    if (shadow) {
-      const choiceOverlay = shadow.querySelector('.choice-overlay');
-      if (choiceOverlay) {
-        choiceOverlay.classList.remove('visible');
-      }
+    if (!petContainer) {
+      await createPet();
     }
+    // 确保容器已创建
+    if (!petContainer) {
+      console.warn("[Tab Cleaner Pet] Failed to create pet container");
+      return;
+    }
+    // 使用 requestAnimationFrame 确保 DOM 已更新
+    requestAnimationFrame(() => {
+      if (petContainer) {
+        petContainer.style.display = "block";
+        isPetVisible = true;
+        isButtonsVisible = false; // 默认隐藏按钮
+        const shadow = petContainer.shadowRoot;
+        if (shadow) {
+          const choiceOverlay = shadow.querySelector('.choice-overlay');
+          if (choiceOverlay) {
+            choiceOverlay.classList.remove('visible');
+          }
+        }
+        console.log("[Tab Cleaner Pet] Pet shown successfully");
+      }
+    });
   }
 
   // 隐藏宠物

@@ -753,6 +753,25 @@
   z-index: 10;
 }
 
+/* Session Masonry Grid 布局 */
+.personal-space .session-masonry-container {
+  position: absolute;
+  top: 125px; /* 搜索栏下方 */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.personal-space .session-section {
+  margin-bottom: 40px;
+}
+
+.personal-space .session-section:last-child {
+  margin-bottom: 20px;
+}
+
 .personal-space .image-12 {
   height: 18.56px;
   position: relative;
