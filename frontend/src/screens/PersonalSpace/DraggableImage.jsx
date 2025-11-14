@@ -230,8 +230,9 @@ export const DraggableImage = ({
         height: height ? `${height}px` : undefined,
         cursor: isDragging ? 'grabbing' : 'grab',
         userSelect: 'none',
-        borderRadius: className === 'opengraph-image' ? '8px' : undefined,
-        objectFit: className === 'opengraph-image' ? 'cover' : undefined,
+        borderRadius: (className && className.includes('opengraph-image')) ? '8px' : undefined,
+        objectFit: (className && className.includes('opengraph-image')) ? 'contain' : undefined, // 使用 contain 保持比例，不裁剪
+        backgroundColor: (className && className.includes('opengraph-image')) ? '#f5f5f5' : undefined, // contain 模式下的背景色
         ...getAnimationStyle(),
       }}
       onMouseDown={handleMouseDown}

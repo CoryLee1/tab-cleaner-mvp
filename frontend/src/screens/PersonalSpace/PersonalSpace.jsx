@@ -745,8 +745,51 @@ export const PersonalSpace = () => {
             // 如果有 animationDelay，传递给组件用于错开动画
             // 文档卡片使用更大的尺寸以便显示更多信息（标题、类型等）
             const isDocCard = og.is_doc_card || false;
-            const cardWidth = isDocCard ? 200 : (og.width || 120);  // 缩小文档卡片尺寸
-            const cardHeight = isDocCard ? 150 : (og.height || 120);  // 缩小文档卡片尺寸
+            
+            // 计算卡片尺寸：保持 OpenGraph 图片比例，统一缩小
+            let cardWidth, cardHeight;
+            if (isDocCard) {
+              // 文档卡片：固定尺寸
+              cardWidth = 200;
+              cardHeight = 150;
+            } else {
+              // 普通卡片：按 OpenGraph 图片比例，统一缩小
+              const BASE_HEIGHT = 120; // 统一的基础高度（缩小后的尺寸）
+              
+              // 优先使用后端返回的图片尺寸（从 OpenGraph meta 标签获取）
+              if (og.image_width && og.image_height) {
+                const aspectRatio = og.image_width / og.image_height;
+                cardHeight = BASE_HEIGHT;
+                cardWidth = BASE_HEIGHT * aspectRatio;
+                console.log(`[CardSize] 使用后端尺寸: ${og.image_width}x${og.image_height}, 计算后: ${cardWidth.toFixed(0)}x${cardHeight}px`);
+              } else if (og.original_width && og.original_height) {
+                // 兼容旧字段名
+                const aspectRatio = og.original_width / og.original_height;
+                cardHeight = BASE_HEIGHT;
+                cardWidth = BASE_HEIGHT * aspectRatio;
+                console.log(`[CardSize] 使用旧字段尺寸: ${og.original_width}x${og.original_height}, 计算后: ${cardWidth.toFixed(0)}x${cardHeight}px`);
+              } else if (og.width && og.height) {
+                // 如果有存储的尺寸，使用存储的宽高比
+                const aspectRatio = og.width / og.height;
+                cardHeight = BASE_HEIGHT;
+                cardWidth = BASE_HEIGHT * aspectRatio;
+                console.log(`[CardSize] 使用存储尺寸: ${og.width}x${og.height}, 计算后: ${cardWidth.toFixed(0)}x${cardHeight}px`);
+              } else {
+                // 默认尺寸（假设 16:9 比例）
+                cardHeight = BASE_HEIGHT;
+                cardWidth = BASE_HEIGHT * (16/9);  // 约 213px
+                console.warn(`[CardSize] 无尺寸数据，使用默认 16:9: ${cardWidth.toFixed(0)}x${cardHeight}px`, {
+                  id: og.id,
+                  url: og.url?.substring(0, 50),
+                  hasImageWidth: !!og.image_width,
+                  hasImageHeight: !!og.image_height,
+                  hasOriginalWidth: !!og.original_width,
+                  hasOriginalHeight: !!og.original_height,
+                  hasWidth: !!og.width,
+                  hasHeight: !!og.height
+                });
+              }
+            }
             
             // 判断是否为最接近的搜索结果
             const isTopResult = topResultId === og.id;

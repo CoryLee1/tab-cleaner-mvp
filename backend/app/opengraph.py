@@ -115,6 +115,8 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
             og_title = soup.find('meta', property='og:title')
             og_description = soup.find('meta', property='og:description')
             og_image = soup.find('meta', property='og:image')
+            og_image_width = soup.find('meta', property='og:image:width')
+            og_image_height = soup.find('meta', property='og:image:height')
             og_site_name = soup.find('meta', property='og:site_name')
             
             # 提取标准 meta 标签作为后备
@@ -139,6 +141,43 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
             if result["image"] and not result["image"].startswith(('http://', 'https://')):
                 from urllib.parse import urljoin
                 result["image"] = urljoin(url, result["image"])
+            
+            # 提取图片尺寸（如果 OpenGraph 提供了）
+            if og_image_width and og_image_width.get('content'):
+                try:
+                    result["image_width"] = int(og_image_width.get('content'))
+                except (ValueError, TypeError):
+                    result["image_width"] = None
+            else:
+                result["image_width"] = None
+                
+            if og_image_height and og_image_height.get('content'):
+                try:
+                    result["image_height"] = int(og_image_height.get('content'))
+                except (ValueError, TypeError):
+                    result["image_height"] = None
+            else:
+                result["image_height"] = None
+            
+            # 如果 OpenGraph 没有提供尺寸，尝试从图片 URL 获取实际尺寸
+            if result["image"] and result["image"].startswith(('http://', 'https://')) and (not result["image_width"] or not result["image_height"]):
+                try:
+                    from PIL import Image
+                    from io import BytesIO
+                    async with httpx.AsyncClient(timeout=5.0) as img_client:
+                        img_response = await img_client.get(result["image"], headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                        })
+                        if img_response.status_code == 200:
+                            img_data = BytesIO(img_response.content)
+                            img = Image.open(img_data)
+                            w, h = img.size
+                            result["image_width"] = w
+                            result["image_height"] = h
+                            print(f"[OpenGraph] Fetched image dimensions from URL: {w}x{h} for {url[:60]}...")
+                except Exception as e:
+                    # 获取图片尺寸失败不影响主流程，只记录日志
+                    print(f"[OpenGraph] Failed to fetch image dimensions from URL for {url[:60]}...: {str(e)}")
             
             result["site_name"] = og_site_name.get('content', '') if og_site_name else ''
             
@@ -166,6 +205,26 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
                         parsed = urlparse(url)
                         if not result["site_name"]:
                             result["site_name"] = parsed.netloc or ""
+                        # 从 Base64 截图获取图片尺寸
+                        try:
+                            import base64
+                            from PIL import Image
+                            from io import BytesIO
+                            # 提取 Base64 数据（去掉 data URI 前缀）
+                            if screenshot_b64.startswith('data:image'):
+                                base64_data = screenshot_b64.split(',', 1)[1]
+                            else:
+                                base64_data = screenshot_b64
+                            img_data = BytesIO(base64.b64decode(base64_data))
+                            img = Image.open(img_data)
+                            w, h = img.size
+                            result["image_width"] = w
+                            result["image_height"] = h
+                            print(f"[OpenGraph] Screenshot dimensions: {w}x{h} for {url[:60]}...")
+                        except Exception as e:
+                            print(f"[OpenGraph] Failed to get screenshot dimensions for {url[:60]}...: {str(e)}")
+                            result["image_width"] = None
+                            result["image_height"] = None
                         # 立即预取 embedding（等待完成，确保返回时已有 embedding）
                         await _prefetch_embedding(result)
                     else:
@@ -198,6 +257,9 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
                         result["is_doc_card"] = True
                         result["success"] = True
                         result["doc_type"] = detect_doc_type(url, result["site_name"]).get("type", "网页")
+                        # 文档卡片使用固定尺寸（200x150）
+                        result["image_width"] = 200
+                        result["image_height"] = 150
                         # 立即预取 embedding（等待完成，确保返回时已有 embedding）
                         await _prefetch_embedding(result)
                 except Exception as screenshot_error:
@@ -231,6 +293,9 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
                         result["is_doc_card"] = True
                         result["success"] = True
                         result["doc_type"] = detect_doc_type(url, result["site_name"]).get("type", "网页")
+                        # 文档卡片使用固定尺寸（200x150）
+                        result["image_width"] = 200
+                        result["image_height"] = 150
                         # 立即预取 embedding（等待完成，确保返回时已有 embedding）
                         await _prefetch_embedding(result)
                     except Exception as card_error:
@@ -297,6 +362,9 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
                     result["site_name"] = site_name
                     result["doc_type"] = detect_doc_type(url, site_name).get("type", "网页")
                     result["error"] = None  # 清除错误，因为卡片生成成功
+                    # 文档卡片使用固定尺寸（200x150）
+                    result["image_width"] = 200
+                    result["image_height"] = 150
             except Exception as screenshot_error:
                 # 如果截图也失败，使用文档卡片生成器
                 if is_doc_like_url(url):
@@ -328,6 +396,9 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
                         result["site_name"] = site_name
                         result["doc_type"] = detect_doc_type(url, site_name).get("type", "网页")
                         result["error"] = None
+                        # 文档卡片使用固定尺寸（200x150）
+                        result["image_width"] = 200
+                        result["image_height"] = 150
                     except Exception as card_error:
                         result["error"] = f"OpenGraph 抓取失败: {str(e)}，截图生成异常: {str(screenshot_error)}，卡片生成异常: {str(card_error)}"
                 else:

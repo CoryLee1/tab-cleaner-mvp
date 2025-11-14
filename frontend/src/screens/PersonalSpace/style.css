@@ -49,6 +49,8 @@
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   transition: transform 0.2s, box-shadow 0.2s;
+  object-fit: contain; /* 保持原图比例，不拉伸不裁剪 */
+  background-color: #f5f5f5; /* contain 模式下的背景色 */
 }
 
 .personal-space .canvas img.opengraph-image:hover {
