@@ -89,6 +89,17 @@ export class Spring2D {
     this.springY.setTarget(y);
   }
 
+  /**
+   * 设置当前位置（不改变目标）
+   */
+  setPosition(x, y) {
+    this.springX.value = x;
+    this.springY.value = y;
+    // 重置速度，避免跳跃
+    this.springX.velocity = 0;
+    this.springY.velocity = 0;
+  }
+
   getValue() {
     return {
       x: this.springX.getValue(),

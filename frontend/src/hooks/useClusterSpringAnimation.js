@@ -105,20 +105,41 @@ export const useClusterSpringAnimation = (
         });
       }
 
-      // 计算卡片平均大小
-      const avgCardSize = clusterItems.reduce((sum, item) => {
-        const width = item.width || (item.is_doc_card ? 200 : 120);
-        const height = item.height || (item.is_doc_card ? 150 : 120);
-        return sum + Math.max(width, height);
-      }, 0) / clusterItems.length || 120;
+      // 检查 items 是否已经有位置信息
+      // 如果 items 已经有 x, y 坐标，直接使用；否则重新计算
+      const itemsWithPositions = clusterItems.filter(item => 
+        item.x !== undefined && item.y !== undefined && 
+        !isNaN(item.x) && !isNaN(item.y)
+      );
+      
+      let positionedItems;
+      if (itemsWithPositions.length === clusterItems.length && clusterItems.length > 0) {
+        // 所有 items 都有有效的位置，直接使用（但需要根据当前圆心调整偏移）
+        // 计算原圆心（假设是 720, 512）到新圆心的偏移
+        const originalCenter = { x: 720, y: 512 };
+        const offsetX = currentCenter.x - originalCenter.x;
+        const offsetY = currentCenter.y - originalCenter.y;
+        
+        positionedItems = clusterItems.map(item => ({
+          ...item,
+          x: item.x + offsetX,
+          y: item.y + offsetY,
+        }));
+      } else {
+        // 部分或全部 items 没有位置，重新计算
+        const avgCardSize = clusterItems.reduce((sum, item) => {
+          const width = item.width || (item.is_doc_card ? 200 : 120);
+          const height = item.height || (item.is_doc_card ? 150 : 120);
+          return sum + Math.max(width, height);
+        }, 0) / clusterItems.length || 120;
 
-      // 计算卡片的目标位置
-      const positionedItems = calculateRadialLayout(clusterItems, {
-        centerX: currentCenter.x,
-        centerY: currentCenter.y,
-        imageSize: avgCardSize,
-        spacing: null,
-      });
+        positionedItems = calculateRadialLayout(clusterItems, {
+          centerX: currentCenter.x,
+          centerY: currentCenter.y,
+          imageSize: avgCardSize,
+          spacing: null,
+        });
+      }
 
       // 更新每个卡片的 Spring
       positionedItems.forEach((item, index) => {
@@ -127,11 +148,17 @@ export const useClusterSpringAnimation = (
 
         if (!cardSpringsRef.current.has(cardId)) {
           // 创建新的卡片 Spring
+          // 使用 item 的当前 x, y 作为初始位置，如果不存在则使用计算出的位置
+          const currentX = item.x ?? (item.initialX ?? item.x);
+          const currentY = item.y ?? (item.initialY ?? item.y);
+          const targetX = item.x;
+          const targetY = item.y;
+          
           const cardSpring = new Spring2D(
-            item.x,
-            item.y,
-            item.x,
-            item.y,
+            currentX,
+            currentY,
+            targetX,
+            targetY,
             SPRING_CONFIG.card
           );
           cardSpringsRef.current.set(cardId, cardSpring);
@@ -139,6 +166,9 @@ export const useClusterSpringAnimation = (
         } else {
           // 更新卡片目标位置
           const cardSpring = cardSpringsRef.current.get(cardId);
+          // 获取当前 Spring 的位置作为起始位置，避免跳跃
+          const currentPos = cardSpring.getValue();
+          cardSpring.setPosition(currentPos.x, currentPos.y);
           cardSpring.setTarget(item.x, item.y);
         }
       });
@@ -173,6 +203,16 @@ export const useClusterSpringAnimation = (
 
   // 主更新循环
   useEffect(() => {
+    // 如果没有聚类，不启动动画循环
+    if (clusters.length === 0) {
+      isRunningRef.current = false;
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      return;
+    }
+    
     if (isRunningRef.current) return;
     isRunningRef.current = true;
 

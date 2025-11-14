@@ -127,38 +127,108 @@ export const PersonalSpace = () => {
         id: og.id || `og-${index}-${Date.now()}`,
       }));
       
+      // 调试：检查计算出的位置
+      console.log('[Radial View] Calculated positions:', positionedOG.slice(0, 3).map(og => ({
+        id: og.id,
+        x: og.x,
+        y: og.y,
+        title: og.title?.substring(0, 20)
+      })));
+      
+      // 确保每个 item 都有 x, y 坐标
+      const positionedOGWithCoords = positionedOG.map(og => {
+        if (og.x === undefined || og.y === undefined) {
+          console.warn('[Radial View] Missing coordinates for:', og.id, 'x:', og.x, 'y:', og.y);
+        }
+        return {
+          ...og,
+          x: og.x ?? 720,
+          y: og.y ?? 512,
+        };
+      });
+      
+      // 调试：检查最终数据
+      console.log('[Radial View] Final opengraphData:', positionedOGWithCoords.slice(0, 3).map(og => ({
+        id: og.id,
+        x: og.x,
+        y: og.y,
+      })));
+      
       // 更新 opengraphData（用于 Radial 视图）
-      setOpengraphData(positionedOG);
+      setOpengraphData(positionedOGWithCoords);
       setShowOriginalImages(false);
       
       // 更新 clusters：如果有现有聚类，保留；否则创建默认聚类
       setClusters(prev => {
         if (prev.length === 0) {
-          // 创建默认聚类包含所有卡片
+          // 创建默认聚类包含所有卡片（items 需要包含 x, y 坐标，供 Spring 动画使用）
           return [{
             id: 'default-cluster',
             name: '未分类',
             type: 'default',
-            items: positionedOG,
+          items: positionedOGWithCoords.map(og => ({
+            ...og,
+            // 确保 items 中包含 x, y 坐标
+            x: og.x,
+            y: og.y,
+          })),
             center: { x: 720, y: 512 },
             radius: 200,
             item_count: positionedOG.length,
           }];
         } else {
           // 更新现有聚类中的 items，确保数据同步
+          // 重要：需要从 positionedOG 中获取最新的 x, y 坐标
+          // 同时，对于不在现有聚类中的新 items，需要添加到默认聚类或创建新聚类
+          const existingItemIds = new Set(
+            prev.flatMap(c => (c.items || []).map(item => item.id))
+          );
+          const newItems = positionedOGWithCoords.filter(og => !existingItemIds.has(og.id));
+          
           return prev.map(cluster => {
-            // 如果聚类中的 items 不在当前数据中，需要更新
-            const updatedItems = cluster.items.filter(item => 
-              positionedOG.some(og => og.id === item.id)
-            );
+            const updatedItems = cluster.items
+              .filter(item => positionedOGWithCoords.some(og => og.id === item.id))
+              .map(item => {
+                // 从 positionedOGWithCoords 中获取最新的位置信息
+                const latestOG = positionedOGWithCoords.find(og => og.id === item.id);
+                if (latestOG) {
+                  return {
+                    ...item,
+                    x: latestOG.x,
+                    y: latestOG.y,
+                    width: latestOG.width,
+                    height: latestOG.height,
+                  };
+                }
+                return item;
+              });
+            
             return {
               ...cluster,
               items: updatedItems,
               item_count: updatedItems.length,
             };
-          }).filter(cluster => cluster.item_count > 0);
+          })
+          .filter(cluster => cluster.item_count > 0)
+          .concat(newItems.length > 0 ? [{
+            id: 'default-cluster',
+            name: '未分类',
+            type: 'default',
+            items: newItems.map(og => ({
+              ...og,
+              x: og.x,
+              y: og.y,
+            })),
+            center: { x: 720, y: 512 },
+            radius: 200,
+            item_count: newItems.length,
+          }] : []);
         }
       });
+    } else if (viewMode === 'radial' && radialOpengraphData.length === 0) {
+      // 如果切换到 radial 视图但没有数据，清空 clusters
+      setClusters([]);
+      setOpengraphData([]);
     }
   }, [viewMode, currentSessionId, radialOpengraphData]);
 
@@ -243,6 +313,16 @@ export const PersonalSpace = () => {
 
   // Spring 动画：更新卡片位置
   const updateCardPosition = useCallback((cardId, x, y) => {
+    // 只有在启用 Spring 动画时才更新位置
+    // 如果只有默认聚类，不应该更新位置（直接使用计算好的位置）
+    const shouldUpdate = viewMode === 'radial' && clusters.length > 0 && 
+      !(clusters.length === 1 && clusters[0].id === 'default-cluster' && clusters[0].type === 'default');
+    
+    if (!shouldUpdate) {
+      // 禁用 Spring 动画时，不更新位置
+      return;
+    }
+    
     // 更新 opengraphData 或 images 中对应卡片的位置
     if (showOriginalImages) {
       setImages(prev => prev.map(item => {
@@ -259,7 +339,7 @@ export const PersonalSpace = () => {
         return item;
       }));
     }
-  }, [showOriginalImages]);
+  }, [showOriginalImages, viewMode, clusters]);
 
   // Spring 动画：更新聚类中心位置
   const updateClusterCenter = useCallback((clusterId, x, y) => {
@@ -273,8 +353,13 @@ export const PersonalSpace = () => {
   }, []);
 
   // 使用 Spring 动画系统（每帧更新聚类圆心和卡片位置）
+  // 注意：只有在 radial 视图且有聚类时才启用 Spring 动画
+  // 如果没有聚类（只有默认聚类），直接使用计算好的位置，不需要 Spring 动画
+  const shouldUseSpringAnimation = viewMode === 'radial' && clusters.length > 0 && 
+    !(clusters.length === 1 && clusters[0].id === 'default-cluster' && clusters[0].type === 'default');
+  
   useClusterSpringAnimation(
-    clusters,
+    shouldUseSpringAnimation ? clusters : [],
     updateCardPosition,
     updateClusterCenter
   );
@@ -1119,7 +1204,7 @@ export const PersonalSpace = () => {
               containerRef={containerRef}
               showOriginalImages={showOriginalImages}
               images={images}
-              opengraphData={radialOpengraphData} // 使用当前 session 的数据
+              opengraphData={opengraphData} // 使用已计算位置的 opengraphData（在 radial 视图时已通过 calculateRadialLayout 处理）
               searchQuery={searchQuery}
               selectedIds={selectedIds}
               clusters={clusters}

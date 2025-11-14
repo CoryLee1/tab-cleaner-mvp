@@ -113,6 +113,18 @@ export const RadialCanvas = ({
         
         const x = og.x ?? 720;
         const y = og.y ?? 512;
+        
+        // 调试：检查位置数据
+        if (og.id === opengraphData[0]?.id) {
+          console.log('[RadialCanvas] Rendering card:', {
+            id: og.id,
+            x: og.x,
+            y: og.y,
+            hasX: og.x !== undefined,
+            hasY: og.y !== undefined,
+          });
+        }
+        
         const { cardWidth, cardHeight, isDocCard } = calculateCardSize(og);
         const isTopResult = topResultId === og.id;
 
