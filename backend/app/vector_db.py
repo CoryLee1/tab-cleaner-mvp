@@ -90,32 +90,70 @@ async def init_schema():
                 """)
                 print(f"[VectorDB] Created new table: {NAMESPACE}.opengraph_items")
             else:
-                # 表已存在，检查并添加缺失的约束
+                # 表已存在，检查并修复约束
                 print(f"[VectorDB] Table {NAMESPACE}.opengraph_items already exists, checking constraints...")
                 
-                # 检查 UNIQUE 约束是否存在
-                unique_constraint_exists = await conn.fetchval(f"""
-                    SELECT EXISTS (
-                        SELECT 1 FROM pg_constraint 
-                        WHERE conrelid = '{NAMESPACE}.opengraph_items'::regclass 
-                        AND conname = 'opengraph_items_url_unique'
-                    );
+                # 获取所有约束信息
+                constraints = await conn.fetch(f"""
+                    SELECT conname, contype, pg_get_constraintdef(oid) as definition
+                    FROM pg_constraint
+                    WHERE conrelid = '{NAMESPACE}.opengraph_items'::regclass
+                    AND contype IN ('p', 'u');
                 """)
                 
-                if not unique_constraint_exists:
+                print(f"[VectorDB] Found {len(constraints)} constraints: {[c['conname'] for c in constraints]}")
+                
+                # 检查是否有冲突的 UNIQUE 约束（非我们想要的命名约束）
+                conflicting_constraints = [
+                    c for c in constraints 
+                    if c['contype'] == 'u' and c['conname'] != 'opengraph_items_url_unique'
+                ]
+                
+                # 检查我们想要的约束是否存在
+                target_constraint_exists = any(
+                    c['conname'] == 'opengraph_items_url_unique' 
+                    for c in constraints
+                )
+                
+                # 如果有冲突的约束，先删除它们
+                for constraint in conflicting_constraints:
                     try:
-                        # 添加 UNIQUE 约束（如果列中已有重复值会失败）
+                        print(f"[VectorDB] Dropping conflicting constraint: {constraint['conname']}")
                         await conn.execute(f"""
                             ALTER TABLE {NAMESPACE}.opengraph_items 
-                            ADD CONSTRAINT opengraph_items_url_unique UNIQUE (url);
+                            DROP CONSTRAINT IF EXISTS {constraint['conname']};
                         """)
-                        print(f"[VectorDB] Added UNIQUE constraint on url column")
+                    except Exception as e:
+                        print(f"[VectorDB] Warning: Could not drop constraint {constraint['conname']}: {e}")
+                
+                # 如果目标约束不存在，尝试添加
+                if not target_constraint_exists:
+                    try:
+                        # 先检查是否有重复的 URL
+                        duplicate_count = await conn.fetchval(f"""
+                            SELECT COUNT(*) FROM (
+                                SELECT url, COUNT(*) as cnt
+                                FROM {NAMESPACE}.opengraph_items
+                                GROUP BY url
+                                HAVING COUNT(*) > 1
+                            ) duplicates;
+                        """)
+                        
+                        if duplicate_count and duplicate_count > 0:
+                            print(f"[VectorDB] Warning: Found {duplicate_count} duplicate URLs, cannot add UNIQUE constraint")
+                            print(f"[VectorDB] Consider cleaning up duplicate data first")
+                        else:
+                            # 添加 UNIQUE 约束
+                            await conn.execute(f"""
+                                ALTER TABLE {NAMESPACE}.opengraph_items 
+                                ADD CONSTRAINT opengraph_items_url_unique UNIQUE (url);
+                            """)
+                            print(f"[VectorDB] ✓ Added UNIQUE constraint on url column")
                     except Exception as e:
                         print(f"[VectorDB] Warning: Could not add UNIQUE constraint: {e}")
                         print(f"[VectorDB] This may be due to duplicate URLs in existing data")
-                
-                # 检查并添加缺失的列（如果需要）
-                # 这里可以添加逻辑来检查列是否存在，如果不存在则添加
+                else:
+                    print(f"[VectorDB] ✓ UNIQUE constraint already exists")
             
             # 创建索引（无论表是新创建还是已存在）
             await conn.execute(f"""
