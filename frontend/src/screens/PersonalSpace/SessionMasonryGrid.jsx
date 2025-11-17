@@ -27,10 +27,24 @@ export const SessionMasonryGrid = ({
   // 计算视口高度（减去搜索栏高度）
   const viewportHeight = window.innerHeight - searchBarHeight;
 
-  // 找到最接近的搜索结果
+  // 检查是否有搜索结果
   const hasSearchResults = searchQuery.trim() && sessions.some(session => 
-    session.opengraphData.some(item => item.similarity !== undefined && item.similarity > 0)
+    session.opengraphData && session.opengraphData.some(item => 
+      item.similarity !== undefined && item.similarity > 0
+    )
   );
+  
+  // 如果有搜索结果，按相似度排序所有卡片（最相似的排前面）
+  const sortedSessions = hasSearchResults 
+    ? sessions.map(session => ({
+        ...session,
+        opengraphData: [...(session.opengraphData || [])].sort((a, b) => {
+          const simA = a.similarity ?? 0;
+          const simB = b.similarity ?? 0;
+          return simB - simA; // 降序：相似度高的在前
+        })
+      }))
+    : sessions;
 
   // 处理卡片选择
   const handleCardSelect = (cardId) => {
@@ -138,8 +152,8 @@ export const SessionMasonryGrid = ({
         height: `${viewportHeight}px`,
       }}
     >
-      {sessions && sessions.length > 0 ? (
-        sessions.map((session, sessionIndex) => {
+      {sortedSessions && sortedSessions.length > 0 ? (
+        sortedSessions.map((session, sessionIndex) => {
           const sessionSelectedIds = new Set(
             session.opengraphData
               .filter(item => selectedCardIds.has(item.id))
@@ -177,6 +191,8 @@ export const SessionMasonryGrid = ({
                 session={session}
                 selectedCardIds={sessionSelectedIds}
                 topResultId={topResultId}
+                searchQuery={searchQuery}
+                hasSearchResults={hasSearchResults}
                 onCardSelect={handleCardSelect}
                 onCardDelete={handleCardDelete}
                 onOpenLink={handleOpenLink}
@@ -205,6 +221,8 @@ const SessionMasonryGridContent = ({
   session,
   selectedCardIds,
   topResultId,
+  searchQuery,
+  hasSearchResults,
   onCardSelect,
   onCardDelete,
   onOpenLink,
@@ -256,6 +274,9 @@ const SessionMasonryGridContent = ({
 
           const isSelected = selectedCardIds.has(itemId);
           const isTopResult = topResultId === itemId;
+          // 判断是否为搜索结果
+          const isSearchResult = hasSearchResults && og.similarity !== undefined && og.similarity > 0;
+          const similarity = og.similarity ?? 0;
 
           return (
             <SessionCard
@@ -263,6 +284,9 @@ const SessionMasonryGridContent = ({
               og={og}
               isSelected={isSelected}
               isTopResult={isTopResult}
+              isSearchResult={isSearchResult}
+              similarity={similarity}
+              hasSearchResults={hasSearchResults}
               onSelect={onCardSelect}
               onDelete={onCardDelete}
               onOpenLink={onOpenLink}

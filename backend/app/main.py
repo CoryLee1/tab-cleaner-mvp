@@ -166,42 +166,62 @@ async def generate_embeddings(request: EmbeddingRequest):
         
         print(f"[API] Processing {len(request.opengraph_items)} items (checking DB first)")
         
-        # 优先从数据库读取 embedding
-        from vector_db import get_opengraph_item
-        
+        # 优先从数据库读取 embedding（如果数据库配置了）
         result_data = []
         items_to_process = []  # 需要生成 embedding 的项
         
-        for item in request.opengraph_items:
-            url = item.get("url")
-            if not url:
-                continue
-            
-            # 尝试从数据库读取
+        db_host = os.getenv("ADBPG_HOST", "")
+        print(f"[API] ADBPG_HOST configured: {bool(db_host)}")
+        if db_host:
             try:
-                db_item = await get_opengraph_item(url)
-                if db_item and (db_item.get("text_embedding") or db_item.get("image_embedding")):
-                    # 数据库有 embedding，直接使用
-                    result_data.append({
-                        "url": db_item.get("url"),
-                        "title": db_item.get("title") or item.get("tab_title", ""),
-                        "description": db_item.get("description", ""),
-                        "image": db_item.get("image", ""),
-                        "site_name": db_item.get("site_name", ""),
-                        "tab_id": db_item.get("tab_id") or item.get("tab_id"),
-                        "tab_title": db_item.get("tab_title") or item.get("tab_title"),
-                        "embedding": None,
-                        "text_embedding": db_item.get("text_embedding"),
-                        "image_embedding": db_item.get("image_embedding"),
-                        "has_embedding": True,
-                        "similarity": item.get("similarity")
-                    })
-                    continue
-            except Exception as db_error:
-                print(f"[API] DB read error for {url[:50]}...: {db_error}")
-            
-            # 数据库没有，需要生成
-            items_to_process.append(item)
+                from vector_db import get_opengraph_item
+                
+                for item in request.opengraph_items:
+                    url = item.get("url")
+                    if not url:
+                        continue
+                    
+                    # 尝试从数据库读取
+                    try:
+                        db_item = await get_opengraph_item(url)
+                        if db_item:
+                            has_text_emb = db_item.get("text_embedding") and len(db_item.get("text_embedding", [])) > 0
+                            has_image_emb = db_item.get("image_embedding") and len(db_item.get("image_embedding", [])) > 0
+                            if has_text_emb or has_image_emb:
+                                # 数据库有 embedding，直接使用
+                                print(f"[API] ✓ Found in DB: {url[:50]}... (text_emb: {has_text_emb}, image_emb: {has_image_emb})")
+                                result_data.append({
+                                    "url": db_item.get("url"),
+                                    "title": db_item.get("title") or item.get("tab_title", ""),
+                                    "description": db_item.get("description", ""),
+                                    "image": db_item.get("image", ""),
+                                    "site_name": db_item.get("site_name", ""),
+                                    "tab_id": db_item.get("tab_id") or item.get("tab_id"),
+                                    "tab_title": db_item.get("tab_title") or item.get("tab_title"),
+                                    "embedding": None,
+                                    "text_embedding": db_item.get("text_embedding"),
+                                    "image_embedding": db_item.get("image_embedding"),
+                                    "has_embedding": True,
+                                    "similarity": item.get("similarity")
+                                })
+                                continue
+                            else:
+                                print(f"[API] ⚠ DB item exists but no embeddings: {url[:50]}...")
+                        else:
+                            print(f"[API] ⚠ Not found in DB: {url[:50]}...")
+                    except Exception as db_error:
+                        print(f"[API] ✗ DB read error for {url[:50]}...: {db_error}")
+                        import traceback
+                        traceback.print_exc()
+                    
+                    # 数据库没有，需要生成
+                    items_to_process.append(item)
+            except Exception as db_init_error:
+                print(f"[API] Vector DB not available: {db_init_error}, processing all items")
+                items_to_process = request.opengraph_items
+        else:
+            # 数据库未配置，处理所有项
+            items_to_process = request.opengraph_items
         
         # 为没有 embedding 的项生成 embedding
         if items_to_process:
@@ -210,6 +230,14 @@ async def generate_embeddings(request: EmbeddingRequest):
             
             # 添加到结果中
             for item in processed_items:
+                has_text_emb = item.get("text_embedding") and len(item.get("text_embedding", [])) > 0
+                has_image_emb = item.get("image_embedding") and len(item.get("image_embedding", [])) > 0
+                has_emb_flag = item.get("has_embedding", False)
+                
+                if not has_emb_flag and (has_text_emb or has_image_emb):
+                    # 如果 has_embedding 标志为 False 但实际有 embedding，更新标志
+                    has_emb_flag = True
+                
                 result_data.append({
                     "url": item.get("url"),
                     "title": item.get("title") or item.get("tab_title", ""),
@@ -218,16 +246,41 @@ async def generate_embeddings(request: EmbeddingRequest):
                     "site_name": item.get("site_name", ""),
                     "tab_id": item.get("tab_id"),
                     "tab_title": item.get("tab_title"),
-                    "embedding": item.get("embedding"),
+                    "embedding": None,  # 不再使用融合 embedding
                     "text_embedding": item.get("text_embedding"),
                     "image_embedding": item.get("image_embedding"),
-                    "has_embedding": item.get("has_embedding", False),
+                    "has_embedding": has_emb_flag,
                     "similarity": item.get("similarity")
                 })
         
-        items_with_embedding = sum(1 for r in result_data if r.get("has_embedding", False))
-        from_db = len(result_data) - len(items_to_process)
-        print(f"[API] Returning {len(result_data)} items: {from_db} from DB, {len(items_to_process)} newly generated, {items_with_embedding} have embedding")
+        # 统计信息
+        items_with_embedding = sum(1 for r in result_data if 
+            r.get("has_embedding", False) or
+            (r.get("text_embedding") and len(r.get("text_embedding", [])) > 0) or
+            (r.get("image_embedding") and len(r.get("image_embedding", [])) > 0)
+        )
+        items_with_text_emb = sum(1 for r in result_data if 
+            r.get("text_embedding") and len(r.get("text_embedding", [])) > 0
+        )
+        items_with_image_emb = sum(1 for r in result_data if 
+            r.get("image_embedding") and len(r.get("image_embedding", [])) > 0
+        )
+        from_db = len(result_data) - len(items_to_process) if items_to_process else len(result_data)
+        newly_generated = len(items_to_process) if items_to_process else 0
+        
+        print(f"[API] ===== Summary =====")
+        print(f"[API] Total items returned: {len(result_data)}")
+        print(f"[API]   - From DB: {from_db}")
+        print(f"[API]   - Newly generated: {newly_generated}")
+        print(f"[API] Items with embedding: {items_with_embedding}")
+        print(f"[API]   - With text_embedding: {items_with_text_emb}")
+        print(f"[API]   - With image_embedding: {items_with_image_emb}")
+        if len(result_data) > 0:
+            sample = result_data[0]
+            print(f"[API] Sample item: {sample.get('url', '')[:50]}...")
+            print(f"[API]   - has_embedding flag: {sample.get('has_embedding')}")
+            print(f"[API]   - text_embedding: {bool(sample.get('text_embedding'))} (length: {len(sample.get('text_embedding', []))})")
+            print(f"[API]   - image_embedding: {bool(sample.get('image_embedding'))} (length: {len(sample.get('image_embedding', []))})")
         
         return {"ok": True, "data": result_data}
     except Exception as e:

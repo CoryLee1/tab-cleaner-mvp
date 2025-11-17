@@ -393,10 +393,23 @@ export const PersonalSpace = () => {
   // 清空搜索（使用 hook）
   const handleClearSearch = () => {
     clearSearch();
-    // 恢复原始数据
-    if (opengraphData.length > 0) {
-      const originalData = calculateRadialLayout(opengraphData);
-      setOpengraphData(originalData);
+    // 恢复原始数据（清除相似度标记）
+    if (viewMode === 'radial') {
+      // Radial 视图：恢复原始布局
+      const currentSession = getCurrentSession();
+      const currentSessionOpengraphData = currentSession ? (currentSession.opengraphData || []) : [];
+      if (currentSessionOpengraphData.length > 0) {
+        // 清除相似度标记
+        const cleanedData = currentSessionOpengraphData.map(item => ({
+          ...item,
+          similarity: undefined,
+        }));
+        const originalData = calculateRadialLayout(cleanedData);
+        setOpengraphData(originalData);
+      }
+    } else {
+      // Masonry 视图：清除所有 session 的相似度标记
+      // 这个会在 SessionMasonryGrid 中自动处理（因为 hasSearchResults 会变为 false）
     }
   };
 

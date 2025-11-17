@@ -70,8 +70,38 @@ export const useSearch = (opengraphData = []) => {
         }
       }
 
-      const itemsWithEmbedding = allProcessedItems.filter(item => item.embedding).length;
-      console.log('[useSearch] Generated embeddings for', allProcessedItems.length, 'items,', itemsWithEmbedding, 'have embedding');
+      // 检查是否有 embedding（text_embedding 或 image_embedding）
+      // 注意：后端现在返回 text_embedding 和 image_embedding，而不是 embedding
+      const itemsWithEmbedding = allProcessedItems.filter(item => {
+        const hasTextEmb = item.text_embedding && Array.isArray(item.text_embedding) && item.text_embedding.length > 0;
+        const hasImageEmb = item.image_embedding && Array.isArray(item.image_embedding) && item.image_embedding.length > 0;
+        const hasEmbFlag = item.has_embedding === true;
+        return hasTextEmb || hasImageEmb || hasEmbFlag;
+      }).length;
+      
+      const itemsWithTextEmbedding = allProcessedItems.filter(item => 
+        item.text_embedding && Array.isArray(item.text_embedding) && item.text_embedding.length > 0
+      ).length;
+      const itemsWithImageEmbedding = allProcessedItems.filter(item => 
+        item.image_embedding && Array.isArray(item.image_embedding) && item.image_embedding.length > 0
+      ).length;
+      
+      console.log('[useSearch] ===== Embedding Generation Summary =====');
+      console.log('[useSearch] Total items processed:', allProcessedItems.length);
+      console.log('[useSearch]   - Items with embedding (text or image):', itemsWithEmbedding);
+      console.log('[useSearch]   - Items with text_embedding:', itemsWithTextEmbedding);
+      console.log('[useSearch]   - Items with image_embedding:', itemsWithImageEmbedding);
+      if (allProcessedItems.length > 0) {
+        const sample = allProcessedItems[0];
+        console.log('[useSearch] Sample item:', {
+          url: sample.url?.substring(0, 50) || 'no url',
+          has_text_emb: !!(sample.text_embedding && Array.isArray(sample.text_embedding) && sample.text_embedding.length > 0),
+          has_image_emb: !!(sample.image_embedding && Array.isArray(sample.image_embedding) && sample.image_embedding.length > 0),
+          has_embedding_flag: sample.has_embedding,
+          text_emb_length: sample.text_embedding?.length || 0,
+          image_emb_length: sample.image_embedding?.length || 0,
+        });
+      }
       
       setOpengraphWithEmbeddings(allProcessedItems);
       return allProcessedItems;
@@ -177,6 +207,13 @@ export const useSearch = (opengraphData = []) => {
   const clearSearch = () => {
     setSearchQuery("");
     setSearchResults(null);
+    // 清除 opengraphWithEmbeddings 中的相似度标记
+    setOpengraphWithEmbeddings(prev => 
+      prev.map(item => ({
+        ...item,
+        similarity: undefined,
+      }))
+    );
   };
 
   return {

@@ -11,7 +11,10 @@ export const SessionCard = ({
   onSelect, 
   onDelete, 
   onOpenLink,
-  isTopResult = false 
+  isTopResult = false,
+  isSearchResult = false,
+  similarity = 0,
+  hasSearchResults = false,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -75,14 +78,27 @@ export const SessionCard = ({
   // 这样可以确保 fitWidth 正常工作
   const fixedCardWidth = MASONRY_CONFIG.columns.getColumnWidth();
 
+  // 计算发光效果强度（基于相似度）
+  const glowIntensity = isSearchResult ? Math.min(similarity * 2, 1) : 0;
+  const glowColor = `rgba(26, 115, 232, ${glowIntensity * 0.8})`; // 蓝色发光
+  
   return (
     <div
-      className={`masonry-item ${isSelected ? 'selected' : ''}`}
+      className={`masonry-item ${isSelected ? 'selected' : ''} ${isSearchResult ? 'search-result' : ''} ${hasSearchResults && !isSearchResult ? 'search-blur' : ''}`}
       style={{
         width: `${fixedCardWidth}px`,  // 固定像素值，fitWidth 要求
         marginBottom: `${MASONRY_CONFIG.columns.gutter}px`,  // 使用配置中的 gutter
         breakInside: 'avoid',
         position: 'relative',
+        // 搜索结果发光效果
+        boxShadow: isSearchResult 
+          ? `0 0 ${8 + glowIntensity * 12}px ${glowColor}, 0 0 ${4 + glowIntensity * 8}px ${glowColor}, 0 2px 8px rgba(0,0,0,0.15)`
+          : undefined,
+        // 非搜索结果的模糊效果
+        filter: hasSearchResults && !isSearchResult ? 'blur(3px)' : 'none',
+        opacity: hasSearchResults && !isSearchResult ? 0.4 : 1,
+        transition: 'all 0.3s ease',
+        zIndex: isSearchResult ? 10 : 1,
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}

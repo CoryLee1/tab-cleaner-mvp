@@ -15,10 +15,20 @@ export const MasonryGrid = ({
   // 使用配置计算卡片宽度（Pinterest 风格：固定宽度）
   const cardWidth = MASONRY_CONFIG.columns.getColumnWidth();
 
-  // 找到最接近的搜索结果
+  // 检查是否有搜索结果
   const hasSearchResults = searchQuery.trim() && opengraphData.some(item => item.similarity !== undefined && item.similarity > 0);
+  
+  // 如果有搜索结果，按相似度排序（最相似的排前面）
+  const sortedData = hasSearchResults 
+    ? [...opengraphData].sort((a, b) => {
+        const simA = a.similarity ?? 0;
+        const simB = b.similarity ?? 0;
+        return simB - simA; // 降序：相似度高的在前
+      })
+    : opengraphData;
+  
   const topResult = hasSearchResults
-    ? opengraphData.find(item => item.similarity !== undefined && item.similarity > 0)
+    ? sortedData.find(item => item.similarity !== undefined && item.similarity > 0)
     : null;
   const topResultId = topResult?.id;
 
@@ -42,22 +52,35 @@ export const MasonryGrid = ({
           display: 'block',
         }}
       >
-        {opengraphData && Array.isArray(opengraphData) && opengraphData.length > 0 && opengraphData.map((og) => {
+        {sortedData && Array.isArray(sortedData) && sortedData.length > 0 && sortedData.map((og) => {
           if (!og || typeof og !== 'object' || !og.id) {
             return null;
           }
           
           const isDocCard = og.is_doc_card || false;
           const isTopResult = topResultId === og.id;
+          // 判断是否为搜索结果
+          const isSearchResult = hasSearchResults && og.similarity !== undefined && og.similarity > 0;
+          const similarity = og.similarity ?? 0;
 
           return (
             <div
               key={og.id}
-              className="masonry-item"
+              className={`masonry-item ${isSearchResult ? 'search-result' : ''} ${hasSearchResults && !isSearchResult ? 'search-blur' : ''}`}
               style={{
                 width: `${cardWidth}px`,  // Pinterest 风格：固定宽度
                 marginBottom: `${MASONRY_CONFIG.columns.gutter}px`,  // 使用 gutter 作为间距
                 breakInside: 'avoid',
+                // 搜索结果发光效果
+                boxShadow: isSearchResult 
+                  ? `0 0 ${8 + Math.min(similarity * 2, 1) * 12}px rgba(26, 115, 232, ${Math.min(similarity * 2, 1) * 0.8}), 0 0 ${4 + Math.min(similarity * 2, 1) * 8}px rgba(26, 115, 232, ${Math.min(similarity * 2, 1) * 0.8}), 0 2px 8px rgba(0,0,0,0.15)`
+                  : undefined,
+                // 非搜索结果的模糊效果
+                filter: hasSearchResults && !isSearchResult ? 'blur(3px)' : 'none',
+                opacity: hasSearchResults && !isSearchResult ? 0.4 : 1,
+                transition: 'all 0.3s ease',
+                zIndex: isSearchResult ? 10 : 1,
+                pointerEvents: hasSearchResults && !isSearchResult ? 'none' : 'auto',
               }}
             >
               <img
@@ -69,7 +92,7 @@ export const MasonryGrid = ({
                   height: 'auto',  // Pinterest 风格：高度自适应，保持原始宽高比
                   display: 'block',
                   borderRadius: `${MASONRY_CONFIG.card.borderRadius}px`,
-                  boxShadow: MASONRY_CONFIG.card.boxShadow,
+                  boxShadow: isSearchResult ? 'none' : MASONRY_CONFIG.card.boxShadow, // 搜索结果的外框发光在父元素上
                   cursor: MASONRY_CONFIG.draggable.enabled ? 'move' : 'pointer',
                   objectFit: 'cover',  // 确保图片填充整个宽度
                   backgroundColor: '#f5f5f5',  // 占位符背景色

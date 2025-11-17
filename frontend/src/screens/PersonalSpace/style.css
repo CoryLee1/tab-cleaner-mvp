@@ -872,6 +872,40 @@
   cursor: move !important;
 }
 
+/* 搜索结果样式 */
+.personal-space .masonry-item.search-result {
+  /* 搜索结果卡片：发光效果在 inline style 中设置 */
+  position: relative;
+}
+
+.personal-space .masonry-item.search-blur {
+  /* 非搜索结果卡片：模糊和半透明效果（玻璃效果） */
+  filter: blur(3px);
+  opacity: 0.4;
+  transition: all 0.3s ease;
+  pointer-events: none; /* 防止点击模糊的卡片 */
+}
+
+/* 搜索状态下，搜索结果卡片应该可以交互 */
+.personal-space .masonry-item.search-result {
+  pointer-events: auto;
+  z-index: 10;
+}
+
+/* 搜索状态下的容器遮罩效果（可选，如果需要整体模糊背景） */
+.personal-space .session-masonry-container.has-search::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  z-index: 5;
+}
+
 .personal-space .masonry-column-width {
   visibility: hidden;
   position: absolute;
