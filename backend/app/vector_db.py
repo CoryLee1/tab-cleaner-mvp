@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime
 
 # 数据库连接配置
-DB_HOST = os.getenv("ADBPG_HOST", "")
+DB_HOST = os.getenv("ADBPG_HOST", "gp-uf6j424dtk2ww5291o-master.gpdb.rds.aliyuncs.com")
 DB_PORT = int(os.getenv("ADBPG_PORT", "5432"))
 DB_NAME = os.getenv("ADBPG_DBNAME", "postgres")
 DB_USER = os.getenv("ADBPG_USER", "cleantab_db")
