@@ -2,6 +2,7 @@ import React from "react";
 import { DraggableImage } from "./DraggableImage";
 import { ClusterLabel } from "./ClusterLabel";
 import { CanvasTools } from "./CanvasTools";
+import { getPlaceholderImage } from "../../utils/imagePlaceholder";
 import "./style.css";
 
 /**
@@ -133,7 +134,7 @@ export const RadialCanvas = ({
             key={og.id}
             id={og.id}
             className={`opengraph-image ${isDocCard ? 'doc-card' : ''} ${isTopResult ? 'top-result' : ''}`}
-            src={og.image || 'https://via.placeholder.com/120'}
+            src={og.image || getPlaceholderImage(og, 'initials', cardWidth, cardHeight)}
             alt={og.title || og.url}
             initialX={x}
             initialY={y}

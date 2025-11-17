@@ -1,56 +1,6 @@
 import React, { useState } from 'react';
 import { MASONRY_CONFIG } from '../../config/masonryConfig';
-
-/**
- * 获取占位符图片（仅在 opengraph 图片不存在时使用）
- * 优先级：screenshot > favicon > 纯色占位符
- */
-const getPlaceholderImage = (og) => {
-  // 注意：这个函数只在 og.image 不存在或加载失败时调用
-  // 1. 尝试使用截图
-  if (og.screenshot) {
-    return og.screenshot;
-  }
-  
-  // 2. 尝试使用 favicon（如果数据中有）
-  if (og.favicon) {
-    return og.favicon;
-  }
-  
-  // 3. 尝试从 URL 生成 favicon
-  if (og.url) {
-    try {
-      const urlObj = new URL(og.url);
-      const faviconUrl = `${urlObj.protocol}//${urlObj.host}/favicon.ico`;
-      return faviconUrl;
-    } catch (e) {
-      // URL 解析失败，继续下一步
-    }
-  }
-  
-  // 4. 使用纯色占位符（根据 URL 生成一个稳定的颜色）
-  const color = getColorFromUrl(og.url || 'default');
-  return `data:image/svg+xml,${encodeURIComponent(`
-    <svg xmlns="http://www.w3.org/2000/svg" width="200" height="150">
-      <rect width="200" height="150" fill="${color}"/>
-      <text x="50%" y="50%" text-anchor="middle" dy=".3em" font-family="Arial" font-size="14" fill="white">
-        ${(og.title || 'No Image').substring(0, 20)}
-      </text>
-    </svg>
-  `)}`;
-};
-
-/**
- * 根据 URL 生成一个稳定的颜色
- */
-const getColorFromUrl = (url) => {
-  let hash = 0;
-  for (let i = 0; i < url.length; i++) {
-    hash = url.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash % 360);
-  return `hsl(${hue}, 70%, 50%)`;
-};
+import { getPlaceholderImage, handleImageError } from '../../utils/imagePlaceholder';
 
 /**
  * 单个卡片组件（带悬浮功能）
@@ -156,13 +106,7 @@ export const SessionCard = ({
             objectFit: 'contain',
             backgroundColor: '#f5f5f5',
           }}
-          onError={(e) => {
-            // 图片加载失败时，使用占位符（只有 opengraph 图片失败时才用 favicon 等占位）
-            const placeholder = getPlaceholderImage(og);
-            if (e.target.src !== placeholder) {
-              e.target.src = placeholder;
-            }
-          }}
+          onError={(e) => handleImageError(e, og, 'text')}
         />
         
         {/* 悬浮按钮（底部左侧） */}

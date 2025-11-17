@@ -410,7 +410,8 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
 
 async def _prefetch_embedding(result: Dict) -> None:
     """
-    预取 embedding 数据（一旦 OpenGraph 数据解析完成，立即请求 embedding）
+    预取 embedding 数据并存储到向量数据库
+    一旦 OpenGraph 数据解析完成，立即请求 embedding 并存储
     
     Args:
         result: OpenGraph 结果字典（会被更新，添加 text_embedding 和 image_embedding）
@@ -418,43 +419,93 @@ async def _prefetch_embedding(result: Dict) -> None:
     try:
         # 延迟导入，避免循环依赖
         from search.embed import embed_text, embed_image
+        from search.preprocess import download_image, process_image, extract_text_from_item
+        from vector_db import get_opengraph_item, upsert_opengraph_item
         
         url = result.get("url", "")
+        if not url:
+            return
+        
+        # 先检查数据库是否已有该 URL 的数据（包括 embedding）
+        existing_item = await get_opengraph_item(url)
+        if existing_item and (existing_item.get("text_embedding") or existing_item.get("image_embedding")):
+            # 数据库已有 embedding，直接使用
+            print(f"[OpenGraph] ✓ Found existing embeddings in DB for: {url[:60]}...")
+            result["text_embedding"] = existing_item.get("text_embedding")
+            result["image_embedding"] = existing_item.get("image_embedding")
+            return
+        
+        # 数据库没有，需要生成 embedding
         title = result.get("title", "")
         description = result.get("description", "")
         image = result.get("image", "")
         is_screenshot = result.get("is_screenshot", False)
-        is_doc_card = result.get("is_doc_card", False)
         
-        # 构建文本内容（用于文本 embedding）
-        text_content = f"{title}\n{description}".strip()
+        # 使用 pipeline 的文本提取逻辑
+        text_content = extract_text_from_item(result)
         if not text_content:
             text_content = url  # 如果没有标题和描述，使用 URL
         
         # 异步生成文本和图像 embedding
-        print(f"[OpenGraph] Pre-fetching embeddings for: {url[:60]}...")
+        print(f"[OpenGraph] Generating embeddings for: {url[:60]}...")
         
-        # 并行请求文本和图像 embedding
-        text_emb_task = embed_text(text_content) if text_content else None
-        image_emb_task = embed_image(image) if image else None
+        # 生成文本 embedding
+        text_emb = None
+        if text_content:
+            try:
+                text_emb = await embed_text(text_content)
+                if text_emb:
+                    result["text_embedding"] = text_emb
+                    print(f"[OpenGraph] ✓ Text embedding generated: {len(text_emb)} dims")
+            except Exception as e:
+                print(f"[OpenGraph] ⚠ Text embedding failed: {e}")
         
-        # 等待结果
-        if text_emb_task:
-            text_emb = await text_emb_task
-            if text_emb:
-                result["text_embedding"] = text_emb
-                print(f"[OpenGraph] ✓ Text embedding generated for: {url[:60]}...")
+        # 生成图像 embedding
+        image_emb = None
+        if image:
+            try:
+                # 处理图像：如果是 URL 需要下载，如果是 Base64 直接使用
+                if is_screenshot or (isinstance(image, str) and image.startswith("data:image")):
+                    # 已经是 Base64 格式
+                    image_emb = await embed_image(image)
+                else:
+                    # 是 URL，需要下载并处理
+                    image_data = await download_image(image)
+                    if image_data:
+                        img_b64 = process_image(image_data)
+                        if img_b64:
+                            image_emb = await embed_image(img_b64)
+                
+                if image_emb:
+                    result["image_embedding"] = image_emb
+                    print(f"[OpenGraph] ✓ Image embedding generated: {len(image_emb)} dims")
+            except Exception as e:
+                print(f"[OpenGraph] ⚠ Image embedding failed: {e}")
         
-        if image_emb_task:
-            image_emb = await image_emb_task
-            if image_emb:
-                result["image_embedding"] = image_emb
-                print(f"[OpenGraph] ✓ Image embedding generated for: {url[:60]}...")
-        
-        if result.get("text_embedding") or result.get("image_embedding"):
-            print(f"[OpenGraph] ✓ Embeddings pre-fetched for: {url[:60]}...")
+        # 存储到向量数据库
+        if text_emb or image_emb:
+            success = await upsert_opengraph_item(
+                url=url,
+                title=title,
+                description=description,
+                image=image,
+                site_name=result.get("site_name"),
+                tab_id=result.get("tab_id"),
+                tab_title=result.get("tab_title"),
+                text_embedding=text_emb,
+                image_embedding=image_emb,
+                metadata={
+                    "is_screenshot": is_screenshot,
+                    "is_doc_card": result.get("is_doc_card", False),
+                    "success": result.get("success", False),
+                }
+            )
+            if success:
+                print(f"[OpenGraph] ✓ Stored embeddings to DB for: {url[:60]}...")
+            else:
+                print(f"[OpenGraph] ⚠ Failed to store embeddings to DB for: {url[:60]}...")
         else:
-            print(f"[OpenGraph] ⚠ Failed to pre-fetch embeddings for: {url[:60]}...")
+            print(f"[OpenGraph] ⚠ No embeddings generated for: {url[:60]}...")
             
     except Exception as e:
         # 预取失败不影响主流程，只记录日志

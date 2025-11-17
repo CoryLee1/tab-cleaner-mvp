@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
+import os
 from opengraph import fetch_multiple_opengraph
 from ai_insight import analyze_opengraph_data
 from search import process_opengraph_for_search, search_relevant_items
@@ -13,6 +14,36 @@ from clustering import create_manual_cluster, classify_by_labels, discover_clust
 from clustering.storage import save_clustering_result, save_multiple_clusters
 
 app = FastAPI(title="Tab Cleaner MVP", version="0.0.1")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时初始化向量数据库"""
+    try:
+        # 检查是否配置了数据库连接
+        db_host = os.getenv("ADBPG_HOST", "")
+        if db_host:
+            from vector_db import init_schema
+            print("[Startup] Initializing vector database...")
+            await init_schema()
+            print("[Startup] Vector database initialized")
+        else:
+            print("[Startup] ADBPG_HOST not configured, skipping vector database initialization")
+    except Exception as e:
+        print(f"[Startup] Failed to initialize vector database: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理资源"""
+    try:
+        from vector_db import close_pool
+        await close_pool()
+        print("[Shutdown] Vector database connection pool closed")
+    except Exception as e:
+        print(f"[Shutdown] Error closing vector database: {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -127,44 +158,82 @@ class SearchRequest(BaseModel):
 async def generate_embeddings(request: EmbeddingRequest):
     """
     为OpenGraph数据生成Embedding向量（批量处理）
-    注意：这个API会处理大量数据，建议分批调用避免过载
+    优先从向量数据库读取，如果没有才生成新的
     """
     try:
         if not request.opengraph_items:
             return {"ok": True, "data": []}
         
-        print(f"[API] Generating embeddings for {len(request.opengraph_items)} items")
+        print(f"[API] Processing {len(request.opengraph_items)} items (checking DB first)")
         
-        # 处理OpenGraph数据，生成Embedding
-        processed_items = await process_opengraph_for_search(request.opengraph_items)
+        # 优先从数据库读取 embedding
+        from vector_db import get_opengraph_item
         
-        # 返回必要的字段，包括 text_embedding 和 image_embedding（用于分别计算相似度）
         result_data = []
-        for item in processed_items:
-            result_data.append({
-                "url": item.get("url"),
-                "title": item.get("title") or item.get("tab_title", ""),
-                "description": item.get("description", ""),
-                "image": item.get("image", ""),
-                "site_name": item.get("site_name", ""),
-                "tab_id": item.get("tab_id"),
-                "tab_title": item.get("tab_title"),
-                "embedding": item.get("embedding"),  # 融合向量（用于向后兼容）
-                "text_embedding": item.get("text_embedding"),  # 文本向量（用于分别计算相似度）
-                "image_embedding": item.get("image_embedding"),  # 图像向量（用于分别计算相似度）
-                "has_embedding": item.get("has_embedding", False),
-                "similarity": item.get("similarity")  # 如果有相似度分数
-            })
+        items_to_process = []  # 需要生成 embedding 的项
+        
+        for item in request.opengraph_items:
+            url = item.get("url")
+            if not url:
+                continue
+            
+            # 尝试从数据库读取
+            try:
+                db_item = await get_opengraph_item(url)
+                if db_item and (db_item.get("text_embedding") or db_item.get("image_embedding")):
+                    # 数据库有 embedding，直接使用
+                    result_data.append({
+                        "url": db_item.get("url"),
+                        "title": db_item.get("title") or item.get("tab_title", ""),
+                        "description": db_item.get("description", ""),
+                        "image": db_item.get("image", ""),
+                        "site_name": db_item.get("site_name", ""),
+                        "tab_id": db_item.get("tab_id") or item.get("tab_id"),
+                        "tab_title": db_item.get("tab_title") or item.get("tab_title"),
+                        "embedding": None,
+                        "text_embedding": db_item.get("text_embedding"),
+                        "image_embedding": db_item.get("image_embedding"),
+                        "has_embedding": True,
+                        "similarity": item.get("similarity")
+                    })
+                    continue
+            except Exception as db_error:
+                print(f"[API] DB read error for {url[:50]}...: {db_error}")
+            
+            # 数据库没有，需要生成
+            items_to_process.append(item)
+        
+        # 为没有 embedding 的项生成 embedding
+        if items_to_process:
+            print(f"[API] Generating embeddings for {len(items_to_process)} new items")
+            processed_items = await process_opengraph_for_search(items_to_process)
+            
+            # 添加到结果中
+            for item in processed_items:
+                result_data.append({
+                    "url": item.get("url"),
+                    "title": item.get("title") or item.get("tab_title", ""),
+                    "description": item.get("description", ""),
+                    "image": item.get("image", ""),
+                    "site_name": item.get("site_name", ""),
+                    "tab_id": item.get("tab_id"),
+                    "tab_title": item.get("tab_title"),
+                    "embedding": item.get("embedding"),
+                    "text_embedding": item.get("text_embedding"),
+                    "image_embedding": item.get("image_embedding"),
+                    "has_embedding": item.get("has_embedding", False),
+                    "similarity": item.get("similarity")
+                })
         
         items_with_embedding = sum(1 for r in result_data if r.get("has_embedding", False))
-        print(f"[API] Returning {len(result_data)} items, {items_with_embedding} have embedding")
+        from_db = len(result_data) - len(items_to_process)
+        print(f"[API] Returning {len(result_data)} items: {from_db} from DB, {len(items_to_process)} newly generated, {items_with_embedding} have embedding")
         
         return {"ok": True, "data": result_data}
     except Exception as e:
         print(f"[API] CRITICAL ERROR in generate_embeddings: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
-        # 返回更详细的错误信息
         error_detail = f"{type(e).__name__}: {str(e)}"
         raise HTTPException(status_code=500, detail=error_detail)
 
@@ -173,11 +242,12 @@ async def generate_embeddings(request: EmbeddingRequest):
 async def search_content(request: SearchRequest):
     """
     搜索相关内容（支持文本和图片查询）
+    优先从向量数据库搜索，如果没有结果再使用传入的 opengraph_items
     
     请求参数:
     - query_text: 查询文本（可选）
     - query_image_url: 查询图片URL（可选，至少需要提供query_text或query_image_url之一）
-    - opengraph_items: 包含Embedding的OpenGraph数据列表（应该已经通过/embedding接口处理过）
+    - opengraph_items: 包含Embedding的OpenGraph数据列表（作为后备方案）
     
     返回:
     - 按相关性排序的OpenGraph数据列表（包含similarity分数）
@@ -186,28 +256,68 @@ async def search_content(request: SearchRequest):
         if not request.query_text and not request.query_image_url:
             raise HTTPException(status_code=400, detail="至少需要提供query_text或query_image_url之一")
         
-        if not request.opengraph_items:
-            return {"ok": True, "data": []}
+        print(f"[API] Search request: query_text='{request.query_text}', query_image_url={request.query_image_url}")
         
-        # 调试：检查接收到的数据
-        items_with_embedding = sum(1 for item in request.opengraph_items if item.get("embedding"))
-        print(f"[API] Received {len(request.opengraph_items)} items, {items_with_embedding} have embedding")
-        if items_with_embedding > 0:
-            first_embedding = request.opengraph_items[0].get("embedding")
-            if first_embedding:
-                print(f"[API] First item embedding type: {type(first_embedding)}, length: {len(first_embedding) if isinstance(first_embedding, list) else 'N/A'}")
+        # 优先从向量数据库搜索
+        results = []
+        db_host = os.getenv("ADBPG_HOST", "")
         
-        # 执行搜索
-        results = await search_relevant_items(
-            query_text=request.query_text,
-            query_image_url=request.query_image_url,
-            opengraph_items=request.opengraph_items,
-            top_k=20
-        )
+        if db_host:
+            try:
+                from vector_db import search_by_text_embedding, search_by_image_embedding
+                from search.embed import embed_text, embed_image
+                from search.preprocess import download_image, process_image
+                
+                # 文本搜索
+                if request.query_text:
+                    try:
+                        # 生成查询文本的 embedding
+                        query_emb = await embed_text(request.query_text)
+                        if query_emb:
+                            # 从数据库搜索
+                            db_results = await search_by_text_embedding(query_emb, top_k=20)
+                            if db_results:
+                                print(f"[API] Found {len(db_results)} results from vector DB")
+                                results.extend(db_results)
+                    except Exception as e:
+                        print(f"[API] Vector DB text search failed: {e}, falling back to local search")
+                
+                # 图像搜索
+                if request.query_image_url:
+                    try:
+                        # 下载并处理图像
+                        image_data = await download_image(request.query_image_url)
+                        if image_data:
+                            img_b64 = process_image(image_data)
+                            if img_b64:
+                                # 生成查询图像的 embedding
+                                query_emb = await embed_image(img_b64)
+                                if query_emb:
+                                    # 从数据库搜索
+                                    db_results = await search_by_image_embedding(query_emb, top_k=20)
+                                    if db_results:
+                                        print(f"[API] Found {len(db_results)} image results from vector DB")
+                                        results.extend(db_results)
+                    except Exception as e:
+                        print(f"[API] Vector DB image search failed: {e}, falling back to local search")
+            except Exception as e:
+                print(f"[API] Vector DB search error: {e}, falling back to local search")
+                import traceback
+                traceback.print_exc()
+        
+        # 如果数据库没有结果，使用传入的 opengraph_items 进行本地搜索
+        if not results and request.opengraph_items:
+            print(f"[API] No DB results, using local search with {len(request.opengraph_items)} items")
+            results = await search_relevant_items(
+                query_text=request.query_text,
+                query_image_url=request.query_image_url,
+                opengraph_items=request.opengraph_items,
+                top_k=20
+            )
         
         # 格式化返回结果
         result_data = []
-        for item in results:
+        for item in results[:20]:  # 限制返回 20 个
             result_data.append({
                 "url": item.get("url"),
                 "title": item.get("title") or item.get("tab_title", ""),
@@ -237,7 +347,7 @@ async def search_content(request: SearchRequest):
                         "url": item.get("url"),
                         "description": item.get("description", ""),
                         "similarity": item.get("similarity", 0.0),
-                        "similarity_precise": f"{item.get('similarity', 0.0):.15f}",  # 保留15位小数
+                        "similarity_precise": f"{item.get('similarity', 0.0):.15f}",
                     }
                     for idx, item in enumerate(result_data)
                 ]
@@ -247,14 +357,18 @@ async def search_content(request: SearchRequest):
                 json.dump(output_data, f, ensure_ascii=False, indent=2)
             
             print(f"[API] Search results saved to: {output_file}")
-            print(f"[API] Total results: {len(result_data)}, similarity range: "
-                  f"min={min(r.get('similarity', 0.0) for r in result_data):.10f}, "
-                  f"max={max(r.get('similarity', 0.0) for r in result_data):.10f}")
+            if result_data:
+                print(f"[API] Total results: {len(result_data)}, similarity range: "
+                      f"min={min(r.get('similarity', 0.0) for r in result_data):.10f}, "
+                      f"max={max(r.get('similarity', 0.0) for r in result_data):.10f}")
         except Exception as save_error:
             print(f"[API] Failed to save search results: {save_error}")
         
         return {"ok": True, "data": result_data}
     except Exception as e:
+        print(f"[API] Error searching: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

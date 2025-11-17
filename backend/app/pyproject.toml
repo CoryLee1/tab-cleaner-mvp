@@ -39,4 +39,6 @@ dependencies = [
     # ===== 浏览器自动化 =====
     # Playwright: 用于网页截图（无头浏览器）
     "playwright>=1.40.0",
+    "alibabacloud-gpdb20160503==3.5.0",
+    "alibabacloud-tea-openapi==0.3.8",
 ]

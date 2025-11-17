@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import { usePackeryLayout } from "../../hooks/usePackeryLayout";
 import { MASONRY_CONFIG } from "../../config/masonryConfig";
+import { getPlaceholderImage, handleImageError } from "../../utils/imagePlaceholder";
 import "./style.css";
 
 export const MasonryGrid = ({ 
@@ -60,7 +61,7 @@ export const MasonryGrid = ({
               }}
             >
               <img
-                src={og.image || MASONRY_CONFIG.imageLoading.placeholder}
+                src={og.image || getPlaceholderImage(og, 'text', cardWidth, cardWidth * 0.75)}
                 alt={og.title || og.url}
                 className={`opengraph-image ${isDocCard ? 'doc-card' : ''} ${isTopResult ? 'top-result' : ''}`}
                 style={{
@@ -71,8 +72,10 @@ export const MasonryGrid = ({
                   boxShadow: MASONRY_CONFIG.card.boxShadow,
                   cursor: MASONRY_CONFIG.draggable.enabled ? 'move' : 'pointer',
                   objectFit: 'cover',  // 确保图片填充整个宽度
+                  backgroundColor: '#f5f5f5',  // 占位符背景色
                 }}
                 loading="lazy"  // 懒加载
+                onError={(e) => handleImageError(e, og, 'text')}
                 onClick={(e) => {
                   // 如果启用了拖拽，点击事件可能会被拖拽拦截
                   // 只有在没有拖拽的情况下才触发点击
