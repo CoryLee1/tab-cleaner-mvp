@@ -222,24 +222,53 @@ export const generateTextPlaceholder = (og, width = 200, height = 150) => {
     return text
       .replace(/[\x00-\x1F\x7F-\x9F]/g, '') // 移除控制字符
       .replace(/[\uFFFE\uFFFF]/g, '') // 移除无效的 Unicode 字符
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // 移除零宽字符
       .trim();
+  };
+  
+  // 清理 SVG 字符串，确保不包含无效字符
+  const cleanSVGString = (svgString) => {
+    if (!svgString || typeof svgString !== 'string') return '';
+    // 移除可能导致编码失败的字符
+    return svgString
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // 移除控制字符（保留 \x09 \x0A \x0D）
+      .replace(/[\uFFFE\uFFFF]/g, '') // 移除无效的 Unicode 字符
+      .replace(/[\u200B-\u200D\uFEFF]/g, ''); // 移除零宽字符
   };
   
   // 安全地编码 SVG
   const safeEncodeSVG = (svgString) => {
+    if (!svgString || typeof svgString !== 'string') {
+      // 如果输入无效，返回一个最简单的占位符
+      const fallbackSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${color}"/></svg>`;
+      try {
+        return encodeURIComponent(fallbackSVG);
+      } catch {
+        // 如果连 fallback 都失败，返回空字符串（浏览器会显示默认的 broken image）
+        return '';
+      }
+    }
+    
+    // 清理 SVG 字符串
+    const cleanedSVG = cleanSVGString(svgString);
+    
     try {
-      return encodeURIComponent(svgString);
+      return encodeURIComponent(cleanedSVG);
     } catch (e) {
-      console.warn('[imagePlaceholder] encodeURIComponent failed, using fallback:', e);
-      // 如果编码失败，返回一个简单的占位符
-      return encodeURIComponent(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-          <rect width="100%" height="100%" fill="${color}"/>
-          <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-size="14" fill="${textColor}">
-            ${cleanText(displayText) || 'No Title'}
-          </text>
-        </svg>
-      `);
+      console.warn('[imagePlaceholder] encodeURIComponent failed:', e);
+      // 如果编码失败，尝试使用最简单的占位符
+      const fallbackSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-size="14" fill="${textColor}">${cleanText(displayText) || 'No Title'}</text></svg>`;
+      try {
+        return encodeURIComponent(cleanSVGString(fallbackSVG));
+      } catch {
+        // 如果还是失败，返回最简单的 SVG
+        const minimalSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${color}"/></svg>`;
+        try {
+          return encodeURIComponent(minimalSVG);
+        } catch {
+          return ''; // 最后的 fallback：返回空字符串
+        }
+      }
     }
   };
   
@@ -316,25 +345,53 @@ export const generateInitialsPlaceholder = (og, width = 200, height = 150) => {
     ? '0 1px 2px rgba(255,255,255,0.5)' 
     : '0 2px 4px rgba(0,0,0,0.3)';
   
+  // 清理 SVG 字符串，确保不包含无效字符
+  const cleanSVGString = (svgString) => {
+    if (!svgString || typeof svgString !== 'string') return '';
+    // 移除可能导致编码失败的字符
+    return svgString
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // 移除控制字符（保留 \x09 \x0A \x0D）
+      .replace(/[\uFFFE\uFFFF]/g, '') // 移除无效的 Unicode 字符
+      .replace(/[\u200B-\u200D\uFEFF]/g, ''); // 移除零宽字符
+  };
+  
   // 安全地编码 SVG
   const safeEncodeSVG = (svgString) => {
+    if (!svgString || typeof svgString !== 'string') {
+      // 如果输入无效，返回一个最简单的占位符
+      const fallbackSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${color}"/></svg>`;
+      try {
+        return encodeURIComponent(fallbackSVG);
+      } catch {
+        return '';
+      }
+    }
+    
+    // 清理 SVG 字符串
+    const cleanedSVG = cleanSVGString(svgString);
+    
     try {
-      return encodeURIComponent(svgString);
+      return encodeURIComponent(cleanedSVG);
     } catch (e) {
-      console.warn('[imagePlaceholder] encodeURIComponent failed, using fallback:', e);
-      // 如果编码失败，返回一个简单的占位符
-      return encodeURIComponent(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-          <rect width="100%" height="100%" fill="${color}"/>
-          <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-size="48" fill="${textColor}">
-            ${initials || '?'}
-          </text>
-        </svg>
-      `);
+      console.warn('[imagePlaceholder] encodeURIComponent failed:', e);
+      // 如果编码失败，尝试使用最简单的占位符
+      const cleanedInit = initials && typeof initials === 'string' ? initials.replace(/[\x00-\x1F\x7F-\x9F\uFFFE\uFFFF\u200B-\u200D\uFEFF]/g, '') : '?';
+      const fallbackSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${color}"/><text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-size="48" fill="${textColor}">${cleanedInit}</text></svg>`;
+      try {
+        return encodeURIComponent(cleanSVGString(fallbackSVG));
+      } catch {
+        // 如果还是失败，返回最简单的 SVG
+        const minimalSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="${color}"/></svg>`;
+        try {
+          return encodeURIComponent(minimalSVG);
+        } catch {
+          return ''; // 最后的 fallback：返回空字符串
+        }
+      }
     }
   };
   
-  const cleanedInitials = initials && typeof initials === 'string' ? initials.replace(/[\x00-\x1F\x7F-\x9F\uFFFE\uFFFF]/g, '') : '?';
+  const cleanedInitials = initials && typeof initials === 'string' ? initials.replace(/[\x00-\x1F\x7F-\x9F\uFFFE\uFFFF\u200B-\u200D\uFEFF]/g, '') : '?';
   
   const svgString = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
@@ -370,6 +427,16 @@ export const generateInitialsPlaceholder = (og, width = 200, height = 150) => {
  * @returns {string} 占位符图片 URL（data URI 或普通 URL）
  */
 export const getPlaceholderImage = (og, style = 'text', width = 200, height = 150) => {
+  if (!og) {
+    // 如果没有 og 对象，返回一个默认的占位符
+    const defaultSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#E3F2FD"/></svg>`;
+    try {
+      return `data:image/svg+xml,${encodeURIComponent(defaultSVG)}`;
+    } catch {
+      return '';
+    }
+  }
+  
   // 1. 尝试使用截图
   if (og.screenshot) {
     return og.screenshot;
@@ -394,10 +461,25 @@ export const getPlaceholderImage = (og, style = 'text', width = 200, height = 15
   }
   
   // 4. 使用纯色占位符（根据 style 参数选择样式）
-  if (style === 'initials') {
-    return generateInitialsPlaceholder(og, width, height);
-  } else {
-    return generateTextPlaceholder(og, width, height);
+  try {
+    if (style === 'initials') {
+      const placeholder = generateInitialsPlaceholder(og, width, height);
+      // 确保返回的不是空字符串
+      return placeholder || generateTextPlaceholder(og, width, height);
+    } else {
+      const placeholder = generateTextPlaceholder(og, width, height);
+      // 确保返回的不是空字符串
+      return placeholder || generateInitialsPlaceholder(og, width, height);
+    }
+  } catch (error) {
+    console.warn('[getPlaceholderImage] Error generating placeholder:', error);
+    // 最后的 fallback：返回一个最简单的占位符
+    const fallbackSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#E3F2FD"/></svg>`;
+    try {
+      return `data:image/svg+xml,${encodeURIComponent(fallbackSVG)}`;
+    } catch {
+      return ''; // 如果连这个都失败，返回空字符串
+    }
   }
 };
 

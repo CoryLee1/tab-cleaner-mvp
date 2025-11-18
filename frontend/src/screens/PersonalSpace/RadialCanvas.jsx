@@ -129,12 +129,15 @@ export const RadialCanvas = ({
         const { cardWidth, cardHeight, isDocCard } = calculateCardSize(og);
         const isTopResult = topResultId === og.id;
 
+        // 确保图片源不为空
+        const imageSrc = og.image || getPlaceholderImage(og, 'initials', cardWidth, cardHeight);
+        
         return (
           <DraggableImage
             key={og.id}
             id={og.id}
             className={`opengraph-image ${isDocCard ? 'doc-card' : ''} ${isTopResult ? 'top-result' : ''}`}
-            src={og.image || getPlaceholderImage(og, 'initials', cardWidth, cardHeight)}
+            src={imageSrc}
             alt={og.title || og.url}
             initialX={x}
             initialY={y}
@@ -147,6 +150,7 @@ export const RadialCanvas = ({
             pan={pan}
             onDragEnd={onDragEnd}
             onClick={() => onCardDoubleClick(og)}
+            og={og} // 传递 og 对象用于错误处理
           />
         );
       })}

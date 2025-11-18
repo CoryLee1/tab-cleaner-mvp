@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { CARD_ANIMATION, calculateDistance, calculateDurationByDistance } from "../../motion";
+import { getPlaceholderImage, handleImageError } from "../../utils/imagePlaceholder";
 
 /**
  * 可拖拽图片组件
@@ -21,15 +22,41 @@ export const DraggableImage = ({
   onClick,  // 添加 onClick prop
   zoom = 1,  // 画布缩放比例
   pan = { x: 0, y: 0 },  // 画布平移
+  og, // OpenGraph 数据对象，用于错误处理时生成占位符
 }) => {
   const [position, setPosition] = useState({ x: initialX, y: initialY });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isAnimating, setIsAnimating] = useState(false);
+  const [imageSrc, setImageSrc] = useState(src); // 使用 state 管理图片源，支持错误时切换
   const prevPositionRef = useRef({ x: initialX, y: initialY });
   const imgRef = useRef(null);
   const dragStartPosRef = useRef({ x: 0, y: 0 }); // 记录拖拽开始时的鼠标位置
   const hasMovedRef = useRef(false); // 记录是否真的移动了
+
+  // 当 src 改变时，更新 imageSrc
+  useEffect(() => {
+    setImageSrc(src);
+  }, [src]);
+
+  // 处理图片加载错误
+  const handleImageError = (e) => {
+    if (!og) return;
+    
+    // 如果已经是占位符，不再替换（避免无限循环）
+    if (imageSrc && (imageSrc.startsWith('data:image/svg+xml') || imageSrc.startsWith('data:image/jpeg'))) {
+      return;
+    }
+    
+    try {
+      const placeholder = getPlaceholderImage(og, 'initials', width, height);
+      if (placeholder && placeholder !== imageSrc) {
+        setImageSrc(placeholder);
+      }
+    } catch (error) {
+      console.warn('[DraggableImage] Failed to generate placeholder:', error);
+    }
+  };
 
   // 当 initialX 或 initialY 改变时（从父组件更新），同步位置并触发动画
   useEffect(() => {
@@ -220,8 +247,10 @@ export const DraggableImage = ({
     <img
       ref={imgRef}
       className={`${className} ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isAnimating ? 'animating' : ''}`}
-      src={src}
+      src={imageSrc || src}
       alt={alt}
+      onError={handleImageError}
+      onClick={onClick}
       style={{
         position: 'absolute',
         left: `${position.x}px`,
