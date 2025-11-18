@@ -518,7 +518,6 @@
     if (req.action === "hide") { hideCard(); sendResponse?.({ ok: true }); return true; }
     if (req.action === "fetch-opengraph") {
       // 重要：返回 true 保持消息通道开放，以便异步发送响应
-      const send = sendResponse; // 使用 sendResponse 作为 send
       // 处理本地 OpenGraph 抓取请求
       console.log('[Tab Cleaner Content] fetch-opengraph requested');
       console.log('[Tab Cleaner Content] Checking if opengraph_local.js is loaded...');
@@ -545,13 +544,13 @@
                       hasTitle: !!(data?.title),
                       hasImage: !!(data?.image)
                     });
-                    if (typeof send === 'function') {
-                      send(data);
+                    if (typeof sendResponse === 'function') {
+                      sendResponse(data);
                     }
                   }).catch(error => {
                     console.error('[Tab Cleaner Content] ❌ Promise rejected:', error);
-                    if (typeof send === 'function') {
-                      send({ success: false, error: error.message });
+                    if (typeof sendResponse === 'function') {
+                      sendResponse({ success: false, error: error.message });
                     }
                   });
                 } else {
@@ -560,28 +559,28 @@
                     hasTitle: !!(result?.title),
                     hasImage: !!(result?.image)
                   });
-                  if (typeof send === 'function') {
-                    send(result);
+                  if (typeof sendResponse === 'function') {
+                    sendResponse(result);
                   }
                 }
               } catch (e) {
                 console.error('[Tab Cleaner Content] ❌ Error calling function:', e);
-                if (typeof send === 'function') {
-                  send({ success: false, error: e.message });
+                if (typeof sendResponse === 'function') {
+                  sendResponse({ success: false, error: e.message });
                 }
               }
             } else {
               console.error('[Tab Cleaner Content] ❌ Function still not found after load');
-              if (typeof send === 'function') {
-                send({ success: false, error: 'OpenGraph function not found after script load' });
+              if (typeof sendResponse === 'function') {
+                sendResponse({ success: false, error: 'OpenGraph function not found after script load' });
               }
             }
           }, 500); // 增加等待时间
         };
         script.onerror = (e) => {
           console.error('[Tab Cleaner Content] ❌ Failed to load script:', e);
-          if (typeof send === 'function') {
-            send({ success: false, error: 'Failed to load opengraph_local.js' });
+          if (typeof sendResponse === 'function') {
+            sendResponse({ success: false, error: 'Failed to load opengraph_local.js' });
           }
         };
         (document.head || document.documentElement).appendChild(script);
@@ -686,10 +685,14 @@
                     hasTitle: !!(data?.title),
                     hasImage: !!(data?.image)
                   });
-                  send(data);
+                  if (typeof sendResponse === 'function') {
+                    sendResponse(data);
+                  }
                 }).catch(error => {
                   console.error('[Tab Cleaner Content] Promise rejected after wait:', error);
-                  send({ success: false, error: error.message });
+                  if (typeof sendResponse === 'function') {
+                    sendResponse({ success: false, error: error.message });
+                  }
                 });
               } else {
                 console.log('[Tab Cleaner Content] Sync result after wait:', {
@@ -697,12 +700,16 @@
                   hasTitle: !!(result?.title),
                   hasImage: !!(result?.image)
                 });
-                send(result);
+                if (typeof sendResponse === 'function') {
+                  sendResponse(result);
+                }
               }
             } else {
               console.error('[Tab Cleaner Content] Function still not found after wait');
               console.error('[Tab Cleaner Content] Available globals:', Object.keys(window).filter(k => k.includes('TAB_CLEANER')));
-              send({ success: false, error: 'OpenGraph function not loaded' });
+              if (typeof sendResponse === 'function') {
+                sendResponse({ success: false, error: 'OpenGraph function not loaded' });
+              }
             }
           }, 2000); // 增加到 2 秒
         }
