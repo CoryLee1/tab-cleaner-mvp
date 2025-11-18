@@ -645,9 +645,9 @@
               }
             }).catch(error => {
               console.error('[Tab Cleaner Content] ❌ Promise rejected:', error);
-              if (typeof send === 'function') {
+              if (typeof sendResponse === 'function') {
                 try {
-                  send({ success: false, error: error.message });
+                  sendResponse({ success: false, error: error.message });
                 } catch (sendError) {
                   console.error('[Tab Cleaner Content] ❌ Error sending error response:', sendError);
                 }
@@ -663,9 +663,9 @@
               error: result?.error
             });
             
-            if (typeof send === 'function') {
+            if (typeof sendResponse === 'function') {
               try {
-                send(result);
+                sendResponse(result);
                 console.log('[Tab Cleaner Content] ✅ Sync data sent successfully');
               } catch (sendError) {
                 console.error('[Tab Cleaner Content] ❌ Error sending sync data:', sendError);
