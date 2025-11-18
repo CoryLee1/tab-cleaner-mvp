@@ -315,8 +315,9 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   // 处理 Clean Button：抓取所有 tab 的 OpenGraph
+  // ✅ 新流程：完全本地抓取 OpenGraph → 立即保存 → 异步生成 embedding
   if (req.action === "clean") {
-    console.log("[Tab Cleaner Background] Clean button clicked, fetching OpenGraph for all tabs...");
+    console.log("[Tab Cleaner Background] Clean button clicked - using LOCAL OpenGraph fetching only");
     
     // 获取所有打开的 tabs
     chrome.tabs.query({}, async (tabs) => {
@@ -326,7 +327,6 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       
       try {
         // 过滤掉 chrome://, chrome-extension://, about: 等特殊页面
-        // 同时过滤掉 Chrome Web Store 等不需要收录的页面
         const validTabs = tabs.filter(tab => {
           const url = tab.url || '';
           const lowerUrl = url.toLowerCase();
@@ -365,62 +365,60 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 
         console.log(`[Tab Cleaner Background] Found ${validTabs.length} valid tabs, ${uniqueTabs.length} unique tabs after deduplication`);
 
-        // 调用后端 API 抓取所有 tabs 的 OpenGraph 数据
-        const apiUrl = API_CONFIG.getBaseUrlSync();
-        const opengraphUrl = `${apiUrl}/api/v1/tabs/opengraph`;
-        
-        // 创建超时控制器
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
-        
-        let response;
-        let opengraphData;
-        
-        try {
-          response = await fetch(opengraphUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              tabs: uniqueTabs.map(tab => ({
+        // ✅ 步骤 1: 完全本地 OpenGraph 抓取（每个网站）
+        console.log(`[Tab Cleaner Background] Fetching OpenGraph locally for ${uniqueTabs.length} tabs...`);
+        const localOGResults = await Promise.allSettled(
+          uniqueTabs.map(async (tab) => {
+            try {
+              // 从 content script 获取本地 OpenGraph 数据
+              const localOG = await chrome.tabs.sendMessage(tab.id, { action: 'fetch-opengraph' });
+              if (localOG && localOG.success) {
+                return { 
+                  ...localOG, 
+                  tab_id: tab.id, 
+                  tab_title: tab.title,
+                  id: localOG.id || `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                };
+              }
+              // 如果本地抓取失败，创建一个基础记录
+              return {
                 url: tab.url,
-                title: tab.title,
-                id: tab.id,
-              })),
-            }),
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
-        } catch (fetchError) {
-          clearTimeout(timeoutId);
-          
-          if (fetchError.name === 'AbortError') {
-            throw new Error('请求超时：后端服务器响应时间过长（超过30秒），请检查服务器状态');
-          } else if (fetchError.message && (fetchError.message.includes('Failed to fetch') || fetchError.message.includes('NetworkError'))) {
-            throw new Error(`无法连接到后端服务器（${apiUrl}）。请确保：\n1. 后端服务已启动\n2. 后端服务运行在 ${apiUrl}\n3. 没有防火墙阻止连接`);
-          } else {
-            throw new Error(`网络请求失败：${fetchError.message || fetchError.toString()}`);
-          }
-        }
+                title: tab.title || tab.url,
+                tab_id: tab.id,
+                tab_title: tab.title,
+                success: false,
+                error: 'Local OpenGraph fetch failed',
+                id: `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              };
+            } catch (error) {
+              console.log(`[Tab Cleaner Background] Local OG failed for ${tab.url}:`, error.message);
+              // 返回基础记录
+              return {
+                url: tab.url,
+                title: tab.title || tab.url,
+                tab_id: tab.id,
+                tab_title: tab.title,
+                success: false,
+                error: error.message,
+                id: `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              };
+            }
+          })
+        );
 
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => '未知错误');
-          throw new Error(`HTTP 错误 (${response.status})：${errorText}`);
-        }
+        // 收集所有结果（包括失败的）
+        const opengraphItems = localOGResults
+          .map((result) => {
+            if (result.status === 'fulfilled' && result.value) {
+              return result.value;
+            }
+            return null;
+          })
+          .filter(item => item !== null);
 
-        try {
-          opengraphData = await response.json();
-          console.log('[Tab Cleaner Background] OpenGraph data received from backend:', opengraphData);
-        } catch (jsonError) {
-          throw new Error(`响应解析失败：${jsonError.message}`);
-        }
-
-        // 处理 OpenGraph 数据
-        const opengraphItems = opengraphData.data || (Array.isArray(opengraphData) ? opengraphData : []);
+        console.log(`[Tab Cleaner Background] ✅ Got ${opengraphItems.length} OpenGraph results (${opengraphItems.filter(i => i.success).length} successful)`);
+        
         const mergedData = opengraphItems;
-        console.log(`[Tab Cleaner Background] Processed ${mergedData.length} OpenGraph items`);
 
         // ============================================
         // 步骤 1：确保所有 OpenGraph 数据已完全获取
@@ -541,7 +539,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         }
         
         // 确保每个 item 都有 id（如果没有）
-        const itemsWithIds = itemsWithEmbeddings.map((item, index) => {
+        const itemsWithIds = mergedData.map((item, index) => {
           if (!item.id) {
             item.id = item.url || `og-${sessionId}-${index}`;
           }
@@ -552,23 +550,17 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           id: sessionId,
           name: sessionName,
           createdAt: Date.now(),
-          opengraphData: itemsWithIds,
+          opengraphData: itemsWithIds, // 先保存没有 embedding 的数据
           tabCount: itemsWithIds.length,
         };
         
         // 新 session 添加到顶部（最新的在前）
         const updatedSessions = [newSession, ...existingSessions];
         
-        // 保存到 storage
-        // 同时保存 sessions 和 opengraphData（向后兼容）
-        // 注意：如果存储配额超限，尝试清理旧数据
+        // 保存到 storage（不等待 embedding）
         try {
           await chrome.storage.local.set({ 
             sessions: updatedSessions,
-            opengraphData: {
-              ok: opengraphData.ok || true,
-              data: itemsWithIds
-            },
             lastCleanTime: Date.now(),
             currentSessionId: sessionId, // 设置当前 session
           });
@@ -581,10 +573,6 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
               const limitedSessions = updatedSessions.slice(0, 10);
               await chrome.storage.local.set({ 
                 sessions: limitedSessions,
-                opengraphData: {
-                  ok: opengraphData.ok || true,
-                  data: itemsWithIds
-                },
                 lastCleanTime: Date.now(),
                 currentSessionId: sessionId,
               });
@@ -598,61 +586,119 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           }
         }
 
-        console.log(`[Tab Cleaner Background] ✓ All OpenGraph data fetched and saved:`);
+        console.log(`[Tab Cleaner Background] ✓ Session saved immediately:`);
         console.log(`  - Session ID: ${sessionId}`);
         console.log(`  - Session Name: ${sessionName}`);
         console.log(`  - Items count: ${itemsWithIds.length}`);
-        console.log(`  - Sessions total: ${updatedSessions.length}`);
-        console.log(`  - Sample item:`, itemsWithIds[0] ? {
-          id: itemsWithIds[0].id,
-          url: itemsWithIds[0].url?.substring(0, 50),
-          title: itemsWithIds[0].title?.substring(0, 30),
-          hasImage: !!itemsWithIds[0].image,
-          hasScreenshot: !!itemsWithIds[0].screenshot_image,
-        } : 'No items');
+        console.log(`  - Successful items: ${itemsWithIds.filter(i => i.success).length}`);
 
-        // 关闭所有标签页（OpenGraph 已获取完成）
-        // 重要：重新获取当前所有标签页，因为截图过程中可能有些标签页已经被关闭
-        // 只关闭那些在原始 uniqueTabs 列表中的标签页
-        // 重新获取当前所有标签页
-        const currentTabs = await chrome.tabs.query({});
-        
-        // 找出需要关闭的标签页（在原始列表中且仍然存在的）
-        const tabsToClose = currentTabs.filter(tab => originalTabIds.has(tab.id));
-        const allTabIds = tabsToClose.map(tab => tab.id);
-        
-        console.log(`[Tab Cleaner Background] Preparing to close ${allTabIds.length} tabs (from ${originalTabIds.size} original tabs)...`);
+        // ✅ 步骤 3: 关闭所有标签页（OpenGraph 已获取完成）
+        const allTabIds = uniqueTabs.map(tab => tab.id).filter(id => id !== undefined);
         if (allTabIds.length > 0) {
           console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs...`);
-          // 逐个关闭，避免一个失败导致全部失败
-          let closedCount = 0;
           for (const tabId of allTabIds) {
             try {
               await chrome.tabs.remove(tabId);
-              closedCount++;
             } catch (error) {
-              // Tab 可能已经被关闭，忽略错误
-              console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed or invalid:`, error.message);
+              console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed:`, error.message);
             }
           }
-          console.log(`[Tab Cleaner Background] ✓ Closed ${closedCount}/${allTabIds.length} tabs`);
-        } else {
-          console.warn(`[Tab Cleaner Background] No tabs to close (allTabIds.length = 0, originalTabIds.size = ${originalTabIds.size})`);
+          console.log(`[Tab Cleaner Background] ✓ All tabs closed`);
         }
 
-        // 最后打开个人空间展示结果
+        // ✅ 步骤 4: 打开个人空间展示结果（立即显示，不等待 embedding）
         console.log(`[Tab Cleaner Background] Opening personal space...`);
-        try {
-          await chrome.tabs.create({
-            url: chrome.runtime.getURL("personalspace.html")
-          });
-          console.log(`[Tab Cleaner Background] ✓ Personal space opened`);
-        } catch (createError) {
-          console.error(`[Tab Cleaner Background] ✗ Failed to open personal space:`, createError);
-          // 即使打开失败，也继续执行
+        await chrome.tabs.create({
+          url: chrome.runtime.getURL("personalspace.html")
+        });
+        console.log(`[Tab Cleaner Background] ✓ Personal space opened`);
+
+        // ✅ 步骤 5: 异步生成 embedding（不阻塞主流程）
+        const apiUrl = API_CONFIG.getBaseUrlSync();
+        if (apiUrl) {
+          console.log(`[Tab Cleaner Background] Starting async embedding generation...`);
+          // 异步处理，不阻塞响应
+          (async () => {
+            try {
+              const successfulItems = itemsWithIds.filter(item => item.success);
+              if (successfulItems.length === 0) {
+                console.log(`[Tab Cleaner Background] No successful items to generate embeddings for`);
+                return;
+              }
+
+              // 批量生成 embedding（每批 5 个，避免过载）
+              const batchSize = 5;
+              for (let i = 0; i < successfulItems.length; i += batchSize) {
+                const batch = successfulItems.slice(i, i + batchSize);
+                try {
+                  const embeddingUrl = `${apiUrl}/api/v1/search/embedding`;
+                  const embedResponse = await fetch(embeddingUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      opengraph_items: batch.map(item => ({
+                        url: item.url,
+                        title: item.title,
+                        description: item.description,
+                        image: item.image,
+                        site_name: item.site_name,
+                        is_doc_card: item.is_doc_card,
+                      }))
+                    }),
+                  });
+                  
+                  if (embedResponse.ok) {
+                    const embedData = await embedResponse.json();
+                    if (embedData.data && embedData.data.length > 0) {
+                      // 更新 session 中的 embedding 数据
+                      const storageResult = await chrome.storage.local.get(['sessions']);
+                      const sessions = storageResult.sessions || [];
+                      const sessionIndex = sessions.findIndex(s => s.id === sessionId);
+                      
+                      if (sessionIndex !== -1) {
+                        const session = sessions[sessionIndex];
+                        const updatedData = session.opengraphData.map(item => {
+                          const embedItem = embedData.data.find(e => e.url === item.url);
+                          if (embedItem && (embedItem.text_embedding || embedItem.image_embedding)) {
+                            return {
+                              ...item,
+                              text_embedding: embedItem.text_embedding || item.text_embedding,
+                              image_embedding: embedItem.image_embedding || item.image_embedding,
+                            };
+                          }
+                          return item;
+                        });
+                        
+                        sessions[sessionIndex] = {
+                          ...session,
+                          opengraphData: updatedData,
+                        };
+                        
+                        await chrome.storage.local.set({ sessions });
+                        console.log(`[Tab Cleaner Background] ✓ Updated embeddings for batch ${Math.floor(i / batchSize) + 1}`);
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.warn(`[Tab Cleaner Background] Failed to generate embeddings for batch ${Math.floor(i / batchSize) + 1}:`, error);
+                }
+                
+                // 批次间延迟，避免过载
+                if (i + batchSize < successfulItems.length) {
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                }
+              }
+              
+              console.log(`[Tab Cleaner Background] ✓ All embeddings generated asynchronously`);
+            } catch (error) {
+              console.error('[Tab Cleaner Background] Async embedding generation failed:', error);
+            }
+          })();
+        } else {
+          console.log(`[Tab Cleaner Background] No API URL configured, skipping embedding generation`);
         }
 
-        sendResponse({ ok: true, data: opengraphData });
+        sendResponse({ ok: true, data: { items: itemsWithIds, sessionId } });
       } catch (error) {
         console.error('[Tab Cleaner Background] Failed to fetch OpenGraph:', error);
         
@@ -690,6 +736,37 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         }
         
         // 2. 打开个人空间（使用之前保存的数据）
+        try {
+          await chrome.tabs.create({
+            url: chrome.runtime.getURL("personalspace.html")
+          });
+          console.log(`[Tab Cleaner Background] ✓ Personal space opened (after error)`);
+        } catch (tabError) {
+          console.warn('[Tab Cleaner Background] Failed to open personal space:', tabError);
+        }
+        
+        // 即使失败，也要尝试关闭标签页和打开个人空间
+        try {
+          if (originalTabIds.size > 0) {
+            const currentTabs = await chrome.tabs.query({});
+            const tabsToClose = currentTabs.filter(tab => originalTabIds.has(tab.id));
+            const allTabIds = tabsToClose.map(tab => tab.id);
+            
+            if (allTabIds.length > 0) {
+              console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs after error...`);
+              for (const tabId of allTabIds) {
+                try {
+                  await chrome.tabs.remove(tabId);
+                } catch (closeError) {
+                  console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed:`, closeError.message);
+                }
+              }
+            }
+          }
+        } catch (closeError) {
+          console.error('[Tab Cleaner Background] Failed to close tabs:', closeError);
+        }
+        
         try {
           await chrome.tabs.create({
             url: chrome.runtime.getURL("personalspace.html")
@@ -879,15 +956,14 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 
   // 处理一键清理（创建新session并清理所有tab）
+  // ✅ 新流程：完全本地抓取 OpenGraph → 立即保存 → 异步生成 embedding
   if (req.action === "clean-all") {
-    // 复用 "clean" 的逻辑（已经会创建新 session）
-    console.log("[Tab Cleaner Background] Clean all (from pet) clicked, fetching OpenGraph for all tabs...");
+    console.log("[Tab Cleaner Background] Clean all clicked - using LOCAL OpenGraph fetching only");
     
     // 获取所有打开的 tabs
     chrome.tabs.query({}, async (tabs) => {
       try {
         // 过滤掉 chrome://, chrome-extension://, about: 等特殊页面
-        // 同时过滤掉 Chrome Web Store 等不需要收录的页面
         const validTabs = tabs.filter(tab => {
           const url = tab.url || '';
           const lowerUrl = url.toLowerCase();
@@ -923,27 +999,50 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 
         console.log(`[Tab Cleaner Background] Found ${validTabs.length} valid tabs, ${uniqueTabs.length} unique tabs after deduplication`);
 
-        // ✅ 优先使用本地 OpenGraph 抓取（批量处理）
-        const opengraphItems = [];
+        // ✅ 步骤 1: 完全本地 OpenGraph 抓取（每个网站）
+        console.log(`[Tab Cleaner Background] Fetching OpenGraph locally for ${uniqueTabs.length} tabs...`);
         const localOGResults = await Promise.allSettled(
           uniqueTabs.map(async (tab) => {
             try {
-              // 尝试从 content script 获取本地 OpenGraph 数据
+              // 从 content script 获取本地 OpenGraph 数据
               const localOG = await chrome.tabs.sendMessage(tab.id, { action: 'fetch-opengraph' });
               if (localOG && localOG.success) {
-                return { ...localOG, tab_id: tab.id, tab_title: tab.title };
+                return { 
+                  ...localOG, 
+                  tab_id: tab.id, 
+                  tab_title: tab.title,
+                  id: localOG.id || `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                };
               }
+              // 如果本地抓取失败，创建一个基础记录
+              return {
+                url: tab.url,
+                title: tab.title || tab.url,
+                tab_id: tab.id,
+                tab_title: tab.title,
+                success: false,
+                error: 'Local OpenGraph fetch failed',
+                id: `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              };
             } catch (error) {
-              // Content script 可能未加载或页面不支持，忽略错误
               console.log(`[Tab Cleaner Background] Local OG failed for ${tab.url}:`, error.message);
+              // 返回基础记录
+              return {
+                url: tab.url,
+                title: tab.title || tab.url,
+                tab_id: tab.id,
+                tab_title: tab.title,
+                success: false,
+                error: error.message,
+                id: `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              };
             }
-            return null;
           })
         );
 
-        // 收集本地抓取成功的结果
-        const localOGSuccess = localOGResults
-          .map((result, index) => {
+        // 收集所有结果（包括失败的）
+        const opengraphItems = localOGResults
+          .map((result) => {
             if (result.status === 'fulfilled' && result.value) {
               return result.value;
             }
@@ -951,105 +1050,9 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           })
           .filter(item => item !== null);
 
-        console.log(`[Tab Cleaner Background] ✅ Got ${localOGSuccess.length} local OpenGraph results`);
+        console.log(`[Tab Cleaner Background] ✅ Got ${opengraphItems.length} OpenGraph results (${opengraphItems.filter(i => i.success).length} successful)`);
 
-        // 对于本地抓取失败的 tabs，使用后端 API
-        const failedTabs = uniqueTabs.filter((tab, index) => {
-          const result = localOGResults[index];
-          return !result || result.status !== 'fulfilled' || !result.value;
-        });
-
-        if (failedTabs.length > 0) {
-          console.log(`[Tab Cleaner Background] Using backend API for ${failedTabs.length} tabs...`);
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 30000);
-          
-          // 获取 API 地址
-          const apiUrl = API_CONFIG.getBaseUrlSync();
-          const opengraphUrl = `${apiUrl}/api/v1/tabs/opengraph`;
-          
-          let response;
-          try {
-            response = await fetch(opengraphUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                tabs: failedTabs.map(tab => ({
-                  url: tab.url,
-                  title: tab.title,
-                  id: tab.id,
-                }))
-              }),
-              signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-          } catch (fetchError) {
-            clearTimeout(timeoutId);
-            throw fetchError;
-          }
-
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => '未知错误');
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-          }
-
-          const opengraphData = await response.json();
-          const backendItems = opengraphData.data || (Array.isArray(opengraphData) ? opengraphData : []);
-          
-          // 合并本地和后端结果
-          opengraphItems.push(...localOGSuccess, ...backendItems);
-        } else {
-          // 全部本地抓取成功
-          opengraphItems.push(...localOGSuccess);
-        }
-
-        // 补充 embedding（如果需要）
-        const itemsWithEmbeddings = await Promise.all(opengraphItems.map(async (item, index) => {
-          if (item.text_embedding && item.image_embedding) {
-            return item;
-          }
-          if (item.success && (!item.text_embedding || !item.image_embedding)) {
-            if (index > 0) {
-              await new Promise(resolve => setTimeout(resolve, 50));
-            }
-            try {
-              const embeddingUrl = `${apiUrl}/api/v1/search/embedding`;
-              const embedResponse = await fetch(embeddingUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  opengraph_items: [{
-                    url: item.url,
-                    title: item.title,
-                    description: item.description,
-                    image: item.image,
-                    site_name: item.site_name,
-                    is_screenshot: item.is_screenshot,
-                    is_doc_card: item.is_doc_card,
-                  }]
-                }),
-              });
-              if (embedResponse.ok) {
-                const embedData = await embedResponse.json();
-                if (embedData.data && embedData.data.length > 0) {
-                  const embedItem = embedData.data[0];
-                  if (embedItem.text_embedding && embedItem.image_embedding) {
-                    return {
-                      ...item,
-                      text_embedding: embedItem.text_embedding,
-                      image_embedding: embedItem.image_embedding,
-                    };
-                  }
-                }
-              }
-            } catch (error) {
-              console.warn(`[Tab Cleaner Background] Failed to supplement embeddings:`, error);
-            }
-          }
-          return item;
-        }));
-
-        // 创建新 session
+        // ✅ 步骤 2: 立即保存到 Chrome Storage（不等待 embedding）
         const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const storageResult = await chrome.storage.local.get(['sessions']);
         const existingSessions = storageResult.sessions || [];
@@ -1066,25 +1069,21 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           id: sessionId,
           name: sessionName,
           createdAt: Date.now(),
-          opengraphData: itemsWithEmbeddings,
-          tabCount: itemsWithEmbeddings.length,
+          opengraphData: opengraphItems, // 先保存没有 embedding 的数据
+          tabCount: opengraphItems.length,
         };
         
         const updatedSessions = [newSession, ...existingSessions];
         
         await chrome.storage.local.set({ 
           sessions: updatedSessions,
-          opengraphData: {
-            ok: opengraphData.ok || true,
-            data: itemsWithEmbeddings
-          },
           lastCleanTime: Date.now(),
           currentSessionId: sessionId,
         });
 
-        console.log(`[Tab Cleaner Background] ✓ All OpenGraph data fetched and saved (${itemsWithEmbeddings.length} items)`);
+        console.log(`[Tab Cleaner Background] ✓ Session saved immediately (${opengraphItems.length} items)`);
 
-        // 关闭所有标签页（OpenGraph 已获取完成，可以关闭了）
+        // ✅ 步骤 3: 关闭所有标签页（OpenGraph 已获取完成）
         const allTabIds = uniqueTabs.map(tab => tab.id).filter(id => id !== undefined);
         if (allTabIds.length > 0) {
           console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs...`);
@@ -1098,14 +1097,99 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           console.log(`[Tab Cleaner Background] ✓ All tabs closed`);
         }
 
-        // 最后打开个人空间展示结果
+        // ✅ 步骤 4: 打开个人空间展示结果（立即显示，不等待 embedding）
         console.log(`[Tab Cleaner Background] Opening personal space...`);
         await chrome.tabs.create({
           url: chrome.runtime.getURL("personalspace.html")
         });
         console.log(`[Tab Cleaner Background] ✓ Personal space opened`);
 
-        sendResponse({ ok: true, data: opengraphData });
+        // ✅ 步骤 5: 异步生成 embedding（不阻塞主流程）
+        const apiUrl = API_CONFIG.getBaseUrlSync();
+        if (apiUrl) {
+          console.log(`[Tab Cleaner Background] Starting async embedding generation...`);
+          // 异步处理，不阻塞响应
+          (async () => {
+            try {
+              const successfulItems = opengraphItems.filter(item => item.success);
+              if (successfulItems.length === 0) {
+                console.log(`[Tab Cleaner Background] No successful items to generate embeddings for`);
+                return;
+              }
+
+              // 批量生成 embedding（每批 5 个，避免过载）
+              const batchSize = 5;
+              for (let i = 0; i < successfulItems.length; i += batchSize) {
+                const batch = successfulItems.slice(i, i + batchSize);
+                try {
+                  const embeddingUrl = `${apiUrl}/api/v1/search/embedding`;
+                  const embedResponse = await fetch(embeddingUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      opengraph_items: batch.map(item => ({
+                        url: item.url,
+                        title: item.title,
+                        description: item.description,
+                        image: item.image,
+                        site_name: item.site_name,
+                        is_doc_card: item.is_doc_card,
+                      }))
+                    }),
+                  });
+                  
+                  if (embedResponse.ok) {
+                    const embedData = await embedResponse.json();
+                    if (embedData.data && embedData.data.length > 0) {
+                      // 更新 session 中的 embedding 数据
+                      const storageResult = await chrome.storage.local.get(['sessions']);
+                      const sessions = storageResult.sessions || [];
+                      const sessionIndex = sessions.findIndex(s => s.id === sessionId);
+                      
+                      if (sessionIndex !== -1) {
+                        const session = sessions[sessionIndex];
+                        const updatedData = session.opengraphData.map(item => {
+                          const embedItem = embedData.data.find(e => e.url === item.url);
+                          if (embedItem && (embedItem.text_embedding || embedItem.image_embedding)) {
+                            return {
+                              ...item,
+                              text_embedding: embedItem.text_embedding || item.text_embedding,
+                              image_embedding: embedItem.image_embedding || item.image_embedding,
+                            };
+                          }
+                          return item;
+                        });
+                        
+                        sessions[sessionIndex] = {
+                          ...session,
+                          opengraphData: updatedData,
+                        };
+                        
+                        await chrome.storage.local.set({ sessions });
+                        console.log(`[Tab Cleaner Background] ✓ Updated embeddings for batch ${Math.floor(i / batchSize) + 1}`);
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.warn(`[Tab Cleaner Background] Failed to generate embeddings for batch ${Math.floor(i / batchSize) + 1}:`, error);
+                }
+                
+                // 批次间延迟，避免过载
+                if (i + batchSize < successfulItems.length) {
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                }
+              }
+              
+              console.log(`[Tab Cleaner Background] ✓ All embeddings generated asynchronously`);
+            } catch (error) {
+              console.error('[Tab Cleaner Background] Async embedding generation failed:', error);
+            }
+          })();
+        } else {
+          console.log(`[Tab Cleaner Background] No API URL configured, skipping embedding generation`);
+        }
+
+        sendResponse({ ok: true, data: { items: opengraphItems, sessionId } });
       } catch (error) {
         console.error('[Tab Cleaner Background] Failed to clean all tabs:', error);
         sendResponse({ ok: false, error: error.message });
