@@ -298,11 +298,13 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
             image_url, image_source = get_best_image_candidate(soup, response.url)
             
             if image_url:
+                # 找到了图片（首图或 OG/Twitter Card），不需要截图
                 result["image"] = image_url
+                result["needs_screenshot"] = False  # 明确设置为 False
                 print(f"[OpenGraph] Found image via {image_source}: {image_url[:80]}...")
             else:
+                # 所有 HTML 层都没有找到图片，标记需要截图
                 result["image"] = ""
-                # 如果所有 HTML 层都没有找到图片，标记需要截图
                 result["needs_screenshot"] = True
                 print(f"[OpenGraph] No image found in HTML, marking needs_screenshot=True")
             

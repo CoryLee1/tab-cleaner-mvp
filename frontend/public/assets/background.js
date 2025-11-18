@@ -534,23 +534,45 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         const mergedData = opengraphItems;
         console.log(`[Tab Cleaner Background] Processed ${mergedData.length} OpenGraph items`);
 
-        // 检查哪些 item 需要截图（needs_screenshot=true）
-        const itemsNeedingScreenshot = mergedData.filter(item => item.needs_screenshot && !item.image);
-        if (itemsNeedingScreenshot.length > 0) {
-          console.log(`[Tab Cleaner Background] Found ${itemsNeedingScreenshot.length} items needing screenshot`);
+        // 检查哪些 item 需要截图（needs_screenshot=true 且没有图片）
+        // 逻辑：只有 OpenGraph 拿不到图的才截图
+        // 注意：截图是可选功能，即使失败也不应该阻塞主流程
+        const itemsNeedingScreenshot = mergedData.filter(item => {
+          // 需要截图的条件：needs_screenshot=true 且 image 为空或无效
+          const needsScreenshot = item.needs_screenshot === true;
+          const hasNoImage = !item.image || item.image.trim() === '';
+          const shouldScreenshot = needsScreenshot && hasNoImage;
           
-          // 为每个需要截图的 item 截图
-          for (const item of itemsNeedingScreenshot) {
+          // 调试日志
+          if (needsScreenshot) {
+            console.log(`[Tab Cleaner Background] Item needs screenshot: ${item.url.substring(0, 60)}... (hasImage: ${!hasNoImage}, image: ${item.image ? item.image.substring(0, 50) : 'null'}...)`);
+          }
+          
+          return shouldScreenshot;
+        });
+        if (itemsNeedingScreenshot.length > 0) {
+          console.log(`[Tab Cleaner Background] Found ${itemsNeedingScreenshot.length} items needing screenshot (OpenGraph found no images)`);
+          
+          // 为每个需要截图的 item 截图（异步处理，不阻塞主流程）
+          // 使用 Promise.allSettled 确保即使部分失败也不影响整体流程
+          const screenshotPromises = itemsNeedingScreenshot.map(async (item) => {
             try {
               // 找到对应的 tab
               const tab = uniqueTabs.find(t => t.url === item.url);
               if (!tab) {
                 console.warn(`[Tab Cleaner Background] Tab not found for URL: ${item.url}`);
-                continue;
+                item.needs_screenshot = false;
+                return;
               }
 
-              // 截图
-              const screenshotDataUrl = await captureTabScreenshot(tab.id, tab.windowId);
+              // 截图（设置超时，避免长时间阻塞）
+              const screenshotPromise = captureTabScreenshot(tab.id, tab.windowId);
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Screenshot timeout')), 5000)
+              );
+              
+              const screenshotDataUrl = await Promise.race([screenshotPromise, timeoutPromise]);
+              
               if (screenshotDataUrl) {
                 // 压缩截图（320px 宽度，质量 60）
                 const compressedScreenshot = await compressScreenshot(screenshotDataUrl, 320, 0.6);
@@ -574,6 +596,18 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
               // 截图失败，保持 needs_screenshot=false，前端会使用 doc card fallback
               item.needs_screenshot = false;
             }
+          });
+          
+          // 等待所有截图完成（但设置超时，避免长时间阻塞）
+          try {
+            await Promise.race([
+              Promise.allSettled(screenshotPromises),
+              new Promise(resolve => setTimeout(resolve, 10000)) // 最多等待 10 秒
+            ]);
+            console.log(`[Tab Cleaner Background] Screenshot process completed`);
+          } catch (error) {
+            console.warn(`[Tab Cleaner Background] Screenshot process timeout or error:`, error);
+            // 继续执行，不阻塞主流程
           }
         }
 
@@ -683,26 +717,36 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           .map(tab => tab.id)
           .filter(id => id !== undefined);
         
+        console.log(`[Tab Cleaner Background] Preparing to close ${allTabIds.length} tabs...`);
         if (allTabIds.length > 0) {
           console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs...`);
           // 逐个关闭，避免一个失败导致全部失败
+          let closedCount = 0;
           for (const tabId of allTabIds) {
             try {
               await chrome.tabs.remove(tabId);
+              closedCount++;
             } catch (error) {
               // Tab 可能已经被关闭，忽略错误
               console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed or invalid:`, error.message);
             }
           }
-          console.log(`[Tab Cleaner Background] ✓ All tabs closed`);
+          console.log(`[Tab Cleaner Background] ✓ Closed ${closedCount}/${allTabIds.length} tabs`);
+        } else {
+          console.warn(`[Tab Cleaner Background] No tabs to close (allTabIds.length = 0)`);
         }
 
         // 最后打开个人空间展示结果
         console.log(`[Tab Cleaner Background] Opening personal space...`);
-        await chrome.tabs.create({
-          url: chrome.runtime.getURL("personalspace.html")
-        });
-        console.log(`[Tab Cleaner Background] ✓ Personal space opened`);
+        try {
+          await chrome.tabs.create({
+            url: chrome.runtime.getURL("personalspace.html")
+          });
+          console.log(`[Tab Cleaner Background] ✓ Personal space opened`);
+        } catch (createError) {
+          console.error(`[Tab Cleaner Background] ✗ Failed to open personal space:`, createError);
+          // 即使打开失败，也继续执行
+        }
 
         sendResponse({ ok: true, data: opengraphData });
       } catch (error) {
@@ -715,11 +759,33 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           errorMessage = `无法连接到后端服务器。请确保：\n1. 后端服务已启动（运行在 ${apiUrl}）\n2. 后端服务正常运行\n3. 没有防火墙阻止连接`;
         }
         
-        // 即使失败，也尝试打开个人空间（使用之前保存的数据）
+        // 即使失败，也要尝试：
+        // 1. 关闭标签页
         try {
-          chrome.tabs.create({
+          const allTabIds = uniqueTabs
+            .map(tab => tab.id)
+            .filter(id => id !== undefined);
+          
+          if (allTabIds.length > 0) {
+            console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs after error...`);
+            for (const tabId of allTabIds) {
+              try {
+                await chrome.tabs.remove(tabId);
+              } catch (closeError) {
+                console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed:`, closeError.message);
+              }
+            }
+          }
+        } catch (closeError) {
+          console.error('[Tab Cleaner Background] Failed to close tabs:', closeError);
+        }
+        
+        // 2. 打开个人空间（使用之前保存的数据）
+        try {
+          await chrome.tabs.create({
             url: chrome.runtime.getURL("personalspace.html")
           });
+          console.log(`[Tab Cleaner Background] ✓ Personal space opened (after error)`);
         } catch (tabError) {
           console.warn('[Tab Cleaner Background] Failed to open personal space:', tabError);
         }
