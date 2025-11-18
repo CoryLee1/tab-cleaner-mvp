@@ -151,13 +151,36 @@ async def get_pinterest_from_jsonld(client: httpx.AsyncClient, pin_url: str) -> 
     
     # 如果 OG 没有图片，尝试从页面中提取图片
     if not img:
-        # 尝试找到 Pinterest 图片（通常在 data-src 或 src 属性中）
-        img_tags = soup.select('img[src*="pinimg.com"], img[data-src*="pinimg.com"]')
+        # 方法1: 尝试找到 Pinterest 图片（通常在 data-src 或 src 属性中）
+        img_tags = soup.select('img[src*="pinimg.com"], img[data-src*="pinimg.com"], img[src*="pinterest.com"]')
         if img_tags:
             for img_tag in img_tags:
-                img_src = img_tag.get('data-src') or img_tag.get('src')
-                if img_src and 'pinimg.com' in img_src:
+                img_src = img_tag.get('data-src') or img_tag.get('src') or img_tag.get('data-lazy-src')
+                if img_src and ('pinimg.com' in img_src or 'pinterest.com' in img_src):
                     img = normalize_img(img_src, final_base)
+                    if img:
+                        break
+        
+        # 方法2: 尝试从 script 标签中的 JSON 数据提取图片
+        if not img:
+            for script in soup.select('script'):
+                script_text = script.string or ""
+                if 'pinimg.com' in script_text or 'image' in script_text.lower():
+                    # 尝试提取图片 URL
+                    import re
+                    img_patterns = [
+                        r'https?://[^"\s]*pinimg\.com[^"\s]*\.(jpg|jpeg|png|webp)',
+                        r'"image":\s*"([^"]+)"',
+                        r'imageUrl["\']?\s*:\s*["\']([^"\']+)["\']',
+                    ]
+                    for pattern in img_patterns:
+                        matches = re.findall(pattern, script_text, re.IGNORECASE)
+                        if matches:
+                            img_url = matches[0] if isinstance(matches[0], str) else matches[0][0] if isinstance(matches[0], tuple) else None
+                            if img_url and img_url.startswith('http'):
+                                img = normalize_img(img_url, final_base)
+                                if img:
+                                    break
                     if img:
                         break
     
@@ -168,10 +191,32 @@ async def get_pinterest_from_jsonld(client: httpx.AsyncClient, pin_url: str) -> 
     
     # 如果 OG 没有标题，尝试从页面中提取
     if not title:
-        # 尝试从 h1 或其他标题标签提取
+        # 方法1: 尝试从 h1 或其他标题标签提取
         h1 = soup.select_one('h1')
         if h1:
             title = h1.get_text(strip=True)
+        
+        # 方法2: 尝试从 script 标签中的 JSON 数据提取标题
+        if not title:
+            for script in soup.select('script'):
+                script_text = script.string or ""
+                if 'title' in script_text.lower() or 'name' in script_text.lower():
+                    # 尝试提取标题
+                    import re
+                    title_patterns = [
+                        r'"title":\s*"([^"]+)"',
+                        r'"name":\s*"([^"]+)"',
+                        r'<title[^>]*>([^<]+)</title>',
+                    ]
+                    for pattern in title_patterns:
+                        matches = re.findall(pattern, script_text, re.IGNORECASE)
+                        if matches:
+                            potential_title = matches[0].strip()
+                            if potential_title and len(potential_title) > 3 and len(potential_title) < 200:
+                                title = potential_title
+                                break
+                    if title:
+                        break
     
     if title or img:
         return {
@@ -305,6 +350,10 @@ async def fetch_opengraph(url: str, timeout: float = 15.0) -> Dict:
     if "xiaohongshu.com" in url_lower:
         headers["Referer"] = "https://www.xiaohongshu.com/"
         headers["Origin"] = "https://www.xiaohongshu.com"
+    elif "pinterest.com" in url_lower:
+        # Pinterest 需要 Referer 和 Origin
+        headers["Referer"] = "https://www.pinterest.com/"
+        headers["Origin"] = "https://www.pinterest.com"
     
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
