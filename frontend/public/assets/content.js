@@ -2,6 +2,17 @@
   if (window.__TAB_CLEANER_CONTENT_INSTALLED) return;
   window.__TAB_CLEANER_CONTENT_INSTALLED = true;
 
+  // 加载本地 OpenGraph 抓取工具
+  (function loadOpenGraphLocal() {
+    if (window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED) return;
+    window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED = true;
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('assets/opengraph_local.js');
+    script.onload = () => script.remove();
+    script.onerror = () => script.remove();
+    (document.head || document.documentElement).appendChild(script);
+  })();
+
   // 加载 pet 模块
   (function loadPetModule() {
     if (window.__TAB_CLEANER_PET) {
@@ -477,6 +488,28 @@
     if (req.action === "toggle" || req.action === "toggleCard") { toggleCard(); send?.({ ok: true }); return true; }
     if (req.action === "show") { showCard(); send?.({ ok: true }); return true; }
     if (req.action === "hide") { hideCard(); send?.({ ok: true }); return true; }
+    if (req.action === "fetch-opengraph") {
+      // 处理本地 OpenGraph 抓取请求
+      try {
+        if (window.__TAB_CLEANER_FETCH_OPENGRAPH) {
+          const result = window.__TAB_CLEANER_FETCH_OPENGRAPH();
+          send(result);
+        } else {
+          // 如果函数还没加载，等待一下
+          setTimeout(() => {
+            if (window.__TAB_CLEANER_FETCH_OPENGRAPH) {
+              const result = window.__TAB_CLEANER_FETCH_OPENGRAPH();
+              send(result);
+            } else {
+              send({ success: false, error: 'OpenGraph function not loaded' });
+            }
+          }, 500);
+        }
+      } catch (error) {
+        send({ success: false, error: error.message });
+      }
+      return true; // 保持消息通道开放
+    }
     return false;
   });
 
