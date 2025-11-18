@@ -539,7 +539,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         }
         
         // 确保每个 item 都有 id（如果没有）
-        const itemsWithIds = mergedData.map((item, index) => {
+        const itemsWithIds = opengraphItems.map((item, index) => {
           if (!item.id) {
             item.id = item.url || `og-${sessionId}-${index}`;
           }
