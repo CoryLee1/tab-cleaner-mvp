@@ -1,7 +1,7 @@
 import React, { useRef } from "react";
 import { usePackeryLayout } from "../../hooks/usePackeryLayout";
 import { MASONRY_CONFIG } from "../../config/masonryConfig";
-import { getPlaceholderImage, handleImageError } from "../../utils/imagePlaceholder";
+import { getBestImageSource, handleImageError } from "../../utils/imagePlaceholder";
 import "./style.css";
 
 export const MasonryGrid = ({ 
@@ -84,7 +84,7 @@ export const MasonryGrid = ({
               }}
             >
               <img
-                src={og.image || getPlaceholderImage(og, 'text', cardWidth, cardWidth * 0.75)}
+                src={getBestImageSource(og, 'text', cardWidth, cardWidth * 0.75)}
                 alt={og.title || og.url}
                 className={`opengraph-image ${isDocCard ? 'doc-card' : ''} ${isTopResult ? 'top-result' : ''}`}
                 style={{

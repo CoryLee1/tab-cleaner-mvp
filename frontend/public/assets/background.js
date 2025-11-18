@@ -22,6 +22,127 @@ function isDocLikeUrl(url) {
 }
 
 /**
+ * 捕获标签页截图（使用 Chrome Extension API）
+ * @param {number} tabId - 标签页 ID
+ * @param {number} windowId - 窗口 ID（可选，如果不提供则使用当前窗口）
+ * @returns {Promise<string>} 截图的 data URL
+ */
+async function captureTabScreenshot(tabId, windowId) {
+  try {
+    // 如果提供了 windowId，使用它；否则获取 tab 所在的窗口
+    let targetWindowId = windowId;
+    if (!targetWindowId) {
+      const tab = await chrome.tabs.get(tabId);
+      targetWindowId = tab.windowId;
+    }
+    
+    // 切换到该标签页（确保可见）
+    await chrome.tabs.update(tabId, { active: true });
+    // 等待标签页激活
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // 使用 chrome.tabs.captureVisibleTab 截图
+    return new Promise((resolve, reject) => {
+      chrome.tabs.captureVisibleTab(
+        targetWindowId,
+        { format: 'jpeg', quality: 85 },
+        (dataUrl) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(dataUrl);
+          }
+        }
+      );
+    });
+  } catch (error) {
+    console.error(`[Tab Screenshot] Failed to capture tab ${tabId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * 压缩截图（在 service worker 中使用 OffscreenCanvas）
+ * 注意：Service Worker 中没有 DOM API，但可以使用 OffscreenCanvas（Chrome 69+）
+ * 如果 OffscreenCanvas 不可用，则返回原始 data URL
+ * @param {string} dataUrl - 原始截图的 data URL
+ * @param {number} maxWidth - 最大宽度（像素）
+ * @param {number} quality - JPEG 质量（0-1）
+ * @returns {Promise<string>} 压缩后的 data URL
+ */
+async function compressScreenshot(dataUrl, maxWidth = 320, quality = 0.6) {
+  // Service Worker 中没有 DOM API，压缩功能暂时跳过
+  // 可以在前端页面中压缩，或者使用 OffscreenCanvas（需要 Chrome 69+）
+  // 为了简化，这里先返回原始 data URL
+  // TODO: 实现 OffscreenCanvas 压缩或在前端页面压缩
+  console.log(`[Tab Screenshot] Compression skipped in service worker, using original screenshot`);
+  return dataUrl;
+  
+  // 如果将来需要压缩，可以使用以下代码（需要确保浏览器支持 OffscreenCanvas）：
+  /*
+  try {
+    // 将 data URL 转换为 Blob
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    const bitmap = await createImageBitmap(blob);
+    
+    // 计算新尺寸
+    let width = bitmap.width;
+    let height = bitmap.height;
+    if (width > maxWidth) {
+      height = (height * maxWidth) / width;
+      width = maxWidth;
+    }
+    
+    // 使用 OffscreenCanvas 压缩
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    
+    const compressedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: quality });
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(compressedBlob);
+  } catch (error) {
+    console.warn('[Tab Screenshot] Compression failed, using original:', error);
+    resolve(dataUrl);
+  }
+  */
+}
+
+/**
+ * 保存截图到后端
+ * @param {string} url - 页面 URL
+ * @param {string} screenshotDataUrl - 截图的 data URL
+ * @param {string} apiBaseUrl - API 基础 URL
+ */
+async function saveScreenshotToBackend(url, screenshotDataUrl, apiBaseUrl) {
+  try {
+    const screenshotUrl = `${apiBaseUrl}/api/v1/tabs/screenshot`;
+    const response = await fetch(screenshotUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: url,
+        screenshot: screenshotDataUrl,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    
+    console.log(`[Tab Screenshot] ✓ Screenshot saved to backend for ${url.substring(0, 60)}...`);
+  } catch (error) {
+    console.error(`[Tab Screenshot] Failed to save screenshot to backend:`, error);
+    throw error;
+  }
+}
+
+/**
  * 为文档类标签页截图（在关闭之前）
  */
 async function captureDocTabScreenshots(tabs) {
@@ -412,6 +533,49 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         const opengraphItems = opengraphData.data || (Array.isArray(opengraphData) ? opengraphData : []);
         const mergedData = opengraphItems;
         console.log(`[Tab Cleaner Background] Processed ${mergedData.length} OpenGraph items`);
+
+        // 检查哪些 item 需要截图（needs_screenshot=true）
+        const itemsNeedingScreenshot = mergedData.filter(item => item.needs_screenshot && !item.image);
+        if (itemsNeedingScreenshot.length > 0) {
+          console.log(`[Tab Cleaner Background] Found ${itemsNeedingScreenshot.length} items needing screenshot`);
+          
+          // 为每个需要截图的 item 截图
+          for (const item of itemsNeedingScreenshot) {
+            try {
+              // 找到对应的 tab
+              const tab = uniqueTabs.find(t => t.url === item.url);
+              if (!tab) {
+                console.warn(`[Tab Cleaner Background] Tab not found for URL: ${item.url}`);
+                continue;
+              }
+
+              // 截图
+              const screenshotDataUrl = await captureTabScreenshot(tab.id, tab.windowId);
+              if (screenshotDataUrl) {
+                // 压缩截图（320px 宽度，质量 60）
+                const compressedScreenshot = await compressScreenshot(screenshotDataUrl, 320, 0.6);
+                
+                // 更新 item 的 screenshot_image 字段
+                item.screenshot_image = compressedScreenshot;
+                item.needs_screenshot = false;
+                
+                console.log(`[Tab Cleaner Background] ✓ Screenshot captured for ${item.url.substring(0, 60)}...`);
+                
+                // 发送截图到后端存储（可选，也可以只存在前端）
+                try {
+                  await saveScreenshotToBackend(item.url, compressedScreenshot, apiUrl);
+                } catch (saveError) {
+                  console.warn(`[Tab Cleaner Background] Failed to save screenshot to backend: ${saveError.message}`);
+                  // 即使保存失败，也继续使用前端的 screenshot_image
+                }
+              }
+            } catch (screenshotError) {
+              console.error(`[Tab Cleaner Background] Failed to capture screenshot for ${item.url}:`, screenshotError);
+              // 截图失败，保持 needs_screenshot=false，前端会使用 doc card fallback
+              item.needs_screenshot = false;
+            }
+          }
+        }
 
         // 后端已经在 OpenGraph 解析时预取了 embedding，但可能还在异步处理中
         // 检查哪些 item 还没有 embedding，补充请求（作为兜底）

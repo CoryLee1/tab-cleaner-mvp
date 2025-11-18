@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { CARD_ANIMATION, calculateDistance, calculateDurationByDistance } from "../../motion";
-import { getPlaceholderImage, handleImageError } from "../../utils/imagePlaceholder";
+import { getBestImageSource, getPlaceholderImage } from "../../utils/imagePlaceholder";
 
 /**
  * 可拖拽图片组件
@@ -39,18 +39,30 @@ export const DraggableImage = ({
     setImageSrc(src);
   }, [src]);
 
-  // 处理图片加载错误
+  // 处理图片加载错误（支持优先级回退）
   const handleImageError = (e) => {
     if (!og) return;
     
+    const currentSrc = imageSrc;
+    
     // 如果已经是占位符，不再替换（避免无限循环）
-    if (imageSrc && (imageSrc.startsWith('data:image/svg+xml') || imageSrc.startsWith('data:image/jpeg'))) {
+    if (currentSrc && (currentSrc.startsWith('data:image/svg+xml') || currentSrc.startsWith('data:image/jpeg'))) {
       return;
     }
     
+    // 优先级回退策略：
+    // 1. 如果当前是 image，尝试使用 screenshot_image
+    if (og.image && currentSrc === og.image) {
+      if (og.screenshot_image && og.screenshot_image.trim()) {
+        setImageSrc(og.screenshot_image);
+        return;
+      }
+    }
+    
+    // 2. 如果当前是 screenshot_image，或没有 screenshot_image，使用 doc card / placeholder
     try {
       const placeholder = getPlaceholderImage(og, 'initials', width, height);
-      if (placeholder && placeholder !== imageSrc) {
+      if (placeholder && placeholder !== currentSrc) {
         setImageSrc(placeholder);
       }
     } catch (error) {

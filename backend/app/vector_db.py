@@ -182,6 +182,7 @@ async def init_schema():
                         title TEXT,
                         description TEXT,
                         image TEXT,
+                        screenshot_image TEXT,
                         site_name TEXT,
                         tab_id INTEGER,
                         tab_title TEXT,
@@ -197,6 +198,22 @@ async def init_schema():
                 # 表已存在，检查约束是否符合要求
                 print(f"[VectorDB] ✓ Table {NAMESPACE}.opengraph_items already exists")
                 is_valid, error_msg = await check_table_constraints(conn)
+                
+                # 检查并添加 screenshot_image 字段（如果不存在）
+                column_exists = await conn.fetchval(f"""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_schema = '{NAMESPACE}' 
+                        AND table_name = 'opengraph_items'
+                        AND column_name = 'screenshot_image'
+                    );
+                """)
+                if not column_exists:
+                    await conn.execute(f"""
+                        ALTER TABLE {NAMESPACE}.opengraph_items 
+                        ADD COLUMN screenshot_image TEXT;
+                    """)
+                    print(f"[VectorDB] ✓ Added screenshot_image column to {NAMESPACE}.opengraph_items")
                 
                 if not is_valid:
                     # 检查是否设置了强制重建标志
@@ -214,6 +231,7 @@ async def init_schema():
                                 title TEXT,
                                 description TEXT,
                                 image TEXT,
+                                screenshot_image TEXT,
                                 site_name TEXT,
                                 tab_id INTEGER,
                                 tab_title TEXT,
@@ -354,6 +372,36 @@ async def upsert_opengraph_item(
         return False
 
 
+async def update_opengraph_item_screenshot(url: str, screenshot_image: str) -> bool:
+    """
+    更新 OpenGraph item 的截图字段
+    
+    Args:
+        url: 网页 URL
+        screenshot_image: 截图的 Base64 data URL
+    
+    Returns:
+        成功返回 True，失败返回 False
+    """
+    try:
+        pool = await get_pool()
+        
+        async with pool.acquire() as conn:
+            await conn.execute(f"""
+                UPDATE {NAMESPACE}.opengraph_items
+                SET screenshot_image = $1,
+                    updated_at = NOW()
+                WHERE url = $2;
+            """, screenshot_image, url)
+            
+            return True
+    except Exception as e:
+        print(f"[VectorDB] Error updating screenshot for {url[:50]}...: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 async def get_opengraph_item(url: str) -> Optional[Dict]:
     """
     根据 URL 获取 OpenGraph 数据（包括 embedding）
@@ -369,7 +417,7 @@ async def get_opengraph_item(url: str) -> Optional[Dict]:
         
         async with pool.acquire() as conn:
             row = await conn.fetchrow(f"""
-                SELECT url, title, description, image, site_name,
+                SELECT url, title, description, image, screenshot_image, site_name,
                        tab_id, tab_title, text_embedding, image_embedding, metadata
                 FROM {NAMESPACE}.opengraph_items
                 WHERE url = $1;

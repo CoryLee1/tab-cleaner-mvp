@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MASONRY_CONFIG } from '../../config/masonryConfig';
-import { getPlaceholderImage, handleImageError } from '../../utils/imagePlaceholder';
+import { getBestImageSource, handleImageError } from '../../utils/imagePlaceholder';
 
 /**
  * 单个卡片组件（带悬浮功能）
@@ -106,7 +106,7 @@ export const SessionCard = ({
     >
       <div style={{ position: 'relative' }}>
         <img
-          src={og.image || getPlaceholderImage(og)}
+          src={getBestImageSource(og, 'text', fixedCardWidth, fixedCardWidth * 0.75)}
           alt={og.title || og.url}
           className={`opengraph-image ${isDocCard ? 'doc-card' : ''} ${isTopResult ? 'top-result' : ''} ${isSelected ? 'selected' : ''}`}
           style={{

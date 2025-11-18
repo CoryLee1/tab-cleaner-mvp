@@ -2,7 +2,7 @@ import React from "react";
 import { DraggableImage } from "./DraggableImage";
 import { ClusterLabel } from "./ClusterLabel";
 import { CanvasTools } from "./CanvasTools";
-import { getPlaceholderImage } from "../../utils/imagePlaceholder";
+import { getBestImageSource } from "../../utils/imagePlaceholder";
 import "./style.css";
 
 /**
@@ -129,8 +129,8 @@ export const RadialCanvas = ({
         const { cardWidth, cardHeight, isDocCard } = calculateCardSize(og);
         const isTopResult = topResultId === og.id;
 
-        // 确保图片源不为空
-        const imageSrc = og.image || getPlaceholderImage(og, 'initials', cardWidth, cardHeight);
+        // 使用最佳图片源（优先级：image → screenshot_image → doc card → placeholder）
+        const imageSrc = getBestImageSource(og, 'initials', cardWidth, cardHeight);
         
         return (
           <DraggableImage

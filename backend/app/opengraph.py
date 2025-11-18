@@ -5,7 +5,7 @@ OpenGraph 抓取工具
 """
 import httpx
 from bs4 import BeautifulSoup
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import asyncio
 import json
 from pathlib import Path
@@ -66,6 +66,152 @@ async def _try_backend_screenshot(url: str, result: Dict, wait_for_completion: b
         print(f"[OpenGraph] Backend screenshot failed (error) for: {url[:60]}... Error: {str(e)}")
 
 
+def get_best_image_candidate(soup, response_url: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    CleanTab 图像决策树：按优先级提取最佳图片 URL
+    
+    优先级从高到低：
+    ① 首图（正文第一张大图）- 最完美的 preview
+    ② OG/Twitter Card 图像 - 平台提供的预览图
+    ③ 截图 fallback（由前端处理）
+    ④ 文档类占位图（由前端处理）
+    ⑤ favicon（仅用于 corner badge，不作为主图）
+    
+    Returns:
+        (image_url, source_type): 图片 URL 和来源类型
+        source_type 可能的值：
+        - 'first-img': 正文第一个大图（最高优先级）
+        - 'og:image': OpenGraph 图片
+        - 'twitter:image': Twitter Card 图片
+        - 'itemprop:image': Schema.org itemprop
+        - 'link:image_src': <link rel="image_src">
+        - None: 没有找到图片（需要截图或占位图）
+    """
+    from urllib.parse import urljoin
+    
+    # ① 首图（正文第一张大图）- 最高优先级
+    # 这是最完美的 preview，因为它是用户实际看到的内容
+    img_tags = soup.find_all('img', src=True)
+    if img_tags:
+        exclude_keywords = [
+            'icon', 'logo', 'avatar', 'favicon', 'sprite',
+            'button', 'arrow', 'badge', 'spinner', 'loader',
+            'placeholder', 'blank', 'pixel', 'tracker', 'beacon'
+        ]
+        
+        best_image = None
+        best_score = 0
+        
+        for img in img_tags:
+            src = img.get('src', '').strip()
+            if not src:
+                continue
+            
+            # 跳过 data URI 和 SVG（通常是小图标）
+            if src.startswith('data:') or src.endswith('.svg'):
+                continue
+            
+            # 跳过包含排除关键词的图片
+            src_lower = src.lower()
+            if any(keyword in src_lower for keyword in exclude_keywords):
+                continue
+            
+            # 计算图片的"代表性"分数
+            score = 0
+            
+            # 优先选择有 alt 文本的图片（通常是内容图片）
+            if img.get('alt'):
+                score += 10
+            
+            # 优先选择较大的图片（通过 class、id 等判断）
+            img_class = img.get('class', [])
+            img_id = img.get('id', '')
+            class_id_str = ' '.join(img_class) + ' ' + img_id
+            class_id_lower = class_id_str.lower()
+            
+            # 内容相关的关键词加分
+            content_keywords = ['content', 'main', 'article', 'post', 'image', 'photo', 'picture', 'cover', 'hero', 'banner']
+            if any(keyword in class_id_lower for keyword in content_keywords):
+                score += 5
+            
+            # 优先选择绝对 URL
+            if src.startswith(('http://', 'https://')):
+                score += 3
+            
+            # 优先选择常见的图片格式
+            if any(ext in src_lower for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                score += 2
+            
+            # 跳过明显的小图片（通过 URL 中的尺寸参数判断）
+            if any(size in src_lower for size in ['16x16', '32x32', '48x48', '64x64', 'w=16', 'w=32', 'h=16', 'h=32']):
+                score -= 10
+            
+            if score > best_score:
+                best_score = score
+                best_image = src
+        
+        if best_image:
+            # 处理相对 URL
+            if best_image.startswith('//'):
+                best_image = 'https:' + best_image
+            elif not best_image.startswith(('http://', 'https://')):
+                best_image = urljoin(str(response_url), best_image)
+            return best_image, 'first-img'
+    
+    # ② OG/Twitter Card 图像 - 平台提供的预览图
+    # 2.1 OpenGraph 图片
+    og_image = soup.find('meta', property='og:image')
+    if og_image and og_image.get('content'):
+        url = og_image.get('content').strip()
+        if url:
+            # 处理相对 URL
+            if url.startswith('//'):
+                url = 'https:' + url
+            elif not url.startswith(('http://', 'https://')):
+                url = urljoin(str(response_url), url)
+            return url, 'og:image'
+    
+    # 2.2 Twitter Card 图片
+    twitter_image = soup.find('meta', attrs={'name': 'twitter:image'}) or soup.find('meta', attrs={'property': 'twitter:image'})
+    if twitter_image and twitter_image.get('content'):
+        url = twitter_image.get('content').strip()
+        if url:
+            if url.startswith('//'):
+                url = 'https:' + url
+            elif not url.startswith(('http://', 'https://')):
+                url = urljoin(str(response_url), url)
+            return url, 'twitter:image'
+    
+    # 2.3 Schema.org itemprop="image"
+    itemprop_image = soup.find('meta', attrs={'itemprop': 'image'})
+    if itemprop_image and itemprop_image.get('content'):
+        url = itemprop_image.get('content').strip()
+        if url:
+            if url.startswith('//'):
+                url = 'https:' + url
+            elif not url.startswith(('http://', 'https://')):
+                url = urljoin(str(response_url), url)
+            return url, 'itemprop:image'
+    
+    # 2.4 <link rel="image_src">
+    link_image_src = soup.find('link', attrs={'rel': 'image_src'})
+    if link_image_src and link_image_src.get('href'):
+        url = link_image_src.get('href').strip()
+        if url:
+            if url.startswith('//'):
+                url = 'https:' + url
+            elif not url.startswith(('http://', 'https://')):
+                url = urljoin(str(response_url), url)
+            return url, 'link:image_src'
+    
+    # ③ 截图 fallback - 由前端处理（chrome.tabs.captureVisibleTab）
+    # ④ 文档类占位图 - 由前端处理
+    # ⑤ favicon - 仅用于 corner badge，不作为主图
+    
+    # 没有找到图片，返回 None（前端会使用截图或占位图）
+    return None, None
+
+
 async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallback: bool = True) -> Dict:
     """
     抓取单个 URL 的 OpenGraph 数据
@@ -98,6 +244,7 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
         "success": False,
         "error": None,
         "is_screenshot": False,
+        "needs_screenshot": False,  # 标记是否需要前端截图
     }
 
     # 优先尝试抓取 OpenGraph（所有网页都先尝试 OpenGraph）
@@ -147,98 +294,17 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
                 ''
             )
             
-            # 优先使用 og:image
-            result["image"] = og_image.get('content', '') if og_image else ''
+            # 使用多层取图策略
+            image_url, image_source = get_best_image_candidate(soup, response.url)
             
-            # 如果没有 og:image，尝试其他来源
-            if not result["image"]:
-                # 1. 尝试 Twitter Card 图片
-                twitter_image = soup.find('meta', attrs={'name': 'twitter:image'}) or soup.find('meta', attrs={'property': 'twitter:image'})
-                if twitter_image:
-                    result["image"] = twitter_image.get('content', '').strip()
-                
-                # 2. 如果还是没有，从网页中提取图片
-                if not result["image"]:
-                    # 查找所有 img 标签
-                    img_tags = soup.find_all('img', src=True)
-                    if img_tags:
-                        # 过滤掉小图标、logo等，选择最有代表性的图片
-                        best_image = None
-                        best_score = 0
-                        
-                        # 需要过滤的关键词（小图标、logo等）
-                        exclude_keywords = [
-                            'icon', 'logo', 'avatar', 'favicon', 'sprite',
-                            'button', 'arrow', 'badge', 'spinner', 'loader',
-                            'placeholder', 'blank', 'pixel', 'tracker', 'beacon'
-                        ]
-                        
-                        for img in img_tags:
-                            src = img.get('src', '').strip()
-                            if not src:
-                                continue
-                            
-                            # 跳过 data URI 和 SVG（通常是小图标）
-                            if src.startswith('data:') or src.endswith('.svg'):
-                                continue
-                            
-                            # 跳过包含排除关键词的图片
-                            src_lower = src.lower()
-                            if any(keyword in src_lower for keyword in exclude_keywords):
-                                continue
-                            
-                            # 计算图片的"代表性"分数
-                            score = 0
-                            
-                            # 优先选择有 alt 文本的图片（通常是内容图片）
-                            if img.get('alt'):
-                                score += 10
-                            
-                            # 优先选择较大的图片（通过 class、id 等判断）
-                            img_class = img.get('class', [])
-                            img_id = img.get('id', '')
-                            class_id_str = ' '.join(img_class) + ' ' + img_id
-                            class_id_lower = class_id_str.lower()
-                            
-                            # 内容相关的关键词加分
-                            content_keywords = ['content', 'main', 'article', 'post', 'image', 'photo', 'picture', 'cover', 'hero', 'banner']
-                            if any(keyword in class_id_lower for keyword in content_keywords):
-                                score += 5
-                            
-                            # 优先选择绝对 URL
-                            if src.startswith(('http://', 'https://')):
-                                score += 3
-                            
-                            # 优先选择常见的图片格式
-                            if any(ext in src_lower for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                                score += 2
-                            
-                            # 跳过明显的小图片（通过 URL 中的尺寸参数判断）
-                            if any(size in src_lower for size in ['16x16', '32x32', '48x48', '64x64', 'w=16', 'w=32', 'h=16', 'h=32']):
-                                score -= 10
-                            
-                            if score > best_score:
-                                best_score = score
-                                best_image = src
-                        
-                        if best_image:
-                            result["image"] = best_image
-                            print(f"[OpenGraph] Extracted image from HTML (score={best_score}): {best_image[:80]}...")
-            
-            # 处理图片 URL（参考测试脚本的 normalize_img 逻辑）
-            if result["image"]:
-                image_url = result["image"].strip()
-                # 处理 // 开头的协议相对 URL（如 //example.com/image.jpg）
-                if image_url.startswith('//'):
-                    result["image"] = 'https:' + image_url
-                # 处理相对路径
-                elif not image_url.startswith(('http://', 'https://')):
-                    from urllib.parse import urljoin
-                    # 使用 response.url 作为 base（处理重定向后的最终 URL）
-                    result["image"] = urljoin(str(response.url), image_url)
-                else:
-                    # 已经是绝对 URL，直接使用（包括 http:// 和 https://）
-                    result["image"] = image_url
+            if image_url:
+                result["image"] = image_url
+                print(f"[OpenGraph] Found image via {image_source}: {image_url[:80]}...")
+            else:
+                result["image"] = ""
+                # 如果所有 HTML 层都没有找到图片，标记需要截图
+                result["needs_screenshot"] = True
+                print(f"[OpenGraph] No image found in HTML, marking needs_screenshot=True")
             
             # 提取图片尺寸（如果 OpenGraph 提供了）
             if og_image_width and og_image_width.get('content'):

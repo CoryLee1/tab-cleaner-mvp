@@ -417,6 +417,61 @@ export const generateInitialsPlaceholder = (og, width = 200, height = 150) => {
 };
 
 /**
+ * CleanTab 图像决策树：获取最佳图片源（统一入口）
+ * 
+ * 优先级从高到低：
+ * ① 首图（正文第一张大图）- 最完美的 preview
+ * ② OG/Twitter Card 图像 - 平台提供的预览图
+ * ③ 截图 fallback（chrome.tabs.captureVisibleTab）
+ * ④ 文档类占位图（PDF/GDoc/Notion 等）
+ * ⑤ favicon（仅用于 corner badge，不作为主图）
+ * 
+ * @param {Object} og - OpenGraph 数据对象
+ * @param {string} style - 占位符样式：'text'（标题）或 'initials'（首字母），默认 'text'
+ * @param {number} width - 占位符宽度，默认 200
+ * @param {number} height - 占位符高度，默认 150
+ * @returns {string} 图片 URL（data URI 或普通 URL）
+ */
+export const getBestImageSource = (og, style = 'text', width = 200, height = 150) => {
+  if (!og) {
+    return getPlaceholderImage(null, style, width, height);
+  }
+  
+  // ① 首图（正文第一张大图）- 最高优先级
+  // 后端已经提取了首图，存储在 og.image 中（如果 source_type 是 'first-img'）
+  // 这里直接使用 og.image（后端已经按优先级处理过了）
+  if (og.image && og.image.trim()) {
+    return og.image;
+  }
+  
+  // ② OG/Twitter Card 图像 - 已经在上面处理（后端提取后存储在 og.image）
+  // 如果 og.image 为空，说明后端没有找到 OG/Twitter Card 图片
+  
+  // ③ 截图 fallback（chrome.tabs.captureVisibleTab）
+  // 使用 screenshot_image（前端截图）
+  if (og.screenshot_image && og.screenshot_image.trim()) {
+    return og.screenshot_image;
+  }
+  
+  // 使用 screenshot（旧字段，兼容性）
+  if (og.screenshot && og.screenshot.trim()) {
+    return og.screenshot;
+  }
+  
+  // ④ 文档类占位图（PDF/GDoc/Notion 等）
+  if (og.is_doc_card) {
+    // doc card 应该已经有 image 字段，如果没有则生成
+    return getPlaceholderImage(og, style, width, height);
+  }
+  
+  // ⑤ favicon - 仅用于 corner badge，不作为主图
+  // 这里不使用 favicon 作为主图，直接使用占位符
+  
+  // 最终 fallback：使用占位符
+  return getPlaceholderImage(og, style, width, height);
+};
+
+/**
  * 获取占位符图片（统一入口）
  * 优先级：screenshot > favicon > 纯色占位符
  * 
@@ -437,9 +492,14 @@ export const getPlaceholderImage = (og, style = 'text', width = 200, height = 15
     }
   }
   
-  // 1. 尝试使用截图
+  // 1. 尝试使用截图（旧字段，兼容性）
   if (og.screenshot) {
     return og.screenshot;
+  }
+  
+  // 2. 尝试使用 screenshot_image（前端截图）
+  if (og.screenshot_image) {
+    return og.screenshot_image;
   }
   
   // 2. 尝试使用 favicon（如果数据中有）
@@ -489,12 +549,27 @@ export const getPlaceholderImage = (og, style = 'text', width = 200, height = 15
  * @param {Object} og - OpenGraph 数据对象
  * @param {string} style - 占位符样式
  */
-export const handleImageError = (e, og, style = 'text') => {
+export const handleImageError = (e, og, style = 'text', width = 200, height = 150) => {
   const img = e.target;
-  const placeholder = getPlaceholderImage(og, style);
+  const currentSrc = img.src;
   
   // 避免无限循环：如果已经是占位符，就不再替换
-  if (img.src !== placeholder && !img.src.startsWith('data:image/svg+xml')) {
+  if (currentSrc.startsWith('data:image/svg+xml') || currentSrc.startsWith('data:image/jpeg')) {
+    return;
+  }
+  
+  // 优先级回退策略：
+  // 1. 如果当前是 image，尝试使用 screenshot_image
+  if (og && og.image && currentSrc === og.image) {
+    if (og.screenshot_image && og.screenshot_image.trim()) {
+      img.src = og.screenshot_image;
+      return;
+    }
+  }
+  
+  // 2. 如果当前是 screenshot_image，或没有 screenshot_image，使用 doc card / placeholder
+  const placeholder = getPlaceholderImage(og, style, width, height);
+  if (placeholder && placeholder !== currentSrc) {
     img.src = placeholder;
   }
 };
