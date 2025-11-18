@@ -198,6 +198,42 @@
         success: result.success
       });
 
+      // 12. 如果成功提取了数据，保存到本地存储（作为后备）
+      if (result.success && typeof chrome !== 'undefined' && chrome.storage) {
+        try {
+          const storageKey = `opengraph_cache_${result.url}`;
+          chrome.storage.local.set({
+            [storageKey]: {
+              ...result,
+              timestamp: Date.now(),
+              cached: true
+            }
+          }, () => {
+            console.log('[OpenGraph Local] ✅ Data cached locally:', storageKey);
+          });
+          
+          // 同时保存到最近提取的列表（用于 personal space 读取）
+          chrome.storage.local.get(['recent_opengraph'], (items) => {
+            const recent = items.recent_opengraph || [];
+            // 移除相同 URL 的旧记录
+            const filtered = recent.filter(item => item.url !== result.url);
+            // 添加到顶部
+            filtered.unshift({
+              ...result,
+              timestamp: Date.now(),
+              cached: true
+            });
+            // 只保留最近 100 条
+            const limited = filtered.slice(0, 100);
+            chrome.storage.local.set({ recent_opengraph: limited }, () => {
+              console.log('[OpenGraph Local] ✅ Added to recent_opengraph list');
+            });
+          });
+        } catch (storageError) {
+          console.warn('[OpenGraph Local] Failed to cache data:', storageError);
+        }
+      }
+
     } catch (error) {
       result.error = error.message || String(error);
       result.success = false;
