@@ -103,34 +103,88 @@ class TabItem(BaseModel):
 
 class OpenGraphRequest(BaseModel):
     tabs: List[TabItem]
+    # 可选：前端已抓取的 OpenGraph 数据（用于需要登录的网站）
+    local_opengraph_data: Optional[List[Dict[str, Any]]] = None
 
 
 @app.post("/api/v1/tabs/opengraph")
 async def fetch_tabs_opengraph(request: OpenGraphRequest):
     """
     批量抓取多个 tabs 的 OpenGraph 数据
+    如果提供了 local_opengraph_data，优先使用本地抓取的数据（用于需要登录的网站）
     """
     try:
         urls = [tab.url for tab in request.tabs]
         if not urls:
             return {"ok": True, "data": []}
         
-        results = await fetch_multiple_opengraph(urls)
-        
-        # 将结果与原始 tab 信息合并
-        opengraph_data = []
-        for i, result in enumerate(results):
-            opengraph_data.append({
-                **result,
-                "tab_id": request.tabs[i].id,
-                "tab_title": request.tabs[i].title,
-                # 确保 is_screenshot 字段被包含
-                "is_screenshot": result.get("is_screenshot", False),
-            })
+        # 如果有本地抓取的数据，优先使用
+        if request.local_opengraph_data and len(request.local_opengraph_data) > 0:
+            print(f"[API] Using local OpenGraph data for {len(request.local_opengraph_data)} items")
+            opengraph_data = []
+            
+            # 创建本地数据的 URL 映射
+            local_data_map = {item.get("url"): item for item in request.local_opengraph_data if item.get("url")}
+            
+            # 将本地数据与 tab 信息合并
+            for i, tab in enumerate(request.tabs):
+                local_item = local_data_map.get(tab.url)
+                
+                if local_item:
+                    opengraph_data.append({
+                        **local_item,
+                        "tab_id": tab.id,
+                        "tab_title": tab.title,
+                        "is_local_fetch": True,  # 标记为本地抓取
+                    })
+                else:
+                    # 如果没有本地数据，使用后端抓取
+                    results = await fetch_multiple_opengraph([tab.url])
+                    if results and len(results) > 0:
+                        opengraph_data.append({
+                            **results[0],
+                            "tab_id": tab.id,
+                            "tab_title": tab.title,
+                            "is_screenshot": results[0].get("is_screenshot", False),
+                        })
+            
+            print(f"[API] Processed {len(opengraph_data)} items (local fetch)")
+            
+            # 🔄 对于本地抓取的数据，也需要生成 embedding 并存储到数据库
+            # 模拟 fetch_opengraph 的行为，触发 embedding 预取
+            try:
+                from opengraph import _prefetch_embedding
+                import asyncio
+                # 异步触发 embedding 预取（不阻塞响应）
+                for item in opengraph_data:
+                    if item.get("success") and item.get("is_local_fetch"):
+                        # 创建后台任务，不等待完成（异步执行）
+                        asyncio.create_task(_prefetch_embedding(item))
+                print(f"[API] Triggered embedding prefetch for {sum(1 for item in opengraph_data if item.get('success') and item.get('is_local_fetch'))} local items")
+            except Exception as e:
+                print(f"[API] Warning: Failed to prefetch embeddings for local data: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            # 没有本地数据，使用后端抓取
+            results = await fetch_multiple_opengraph(urls)
+            
+            # 将结果与原始 tab 信息合并
+            opengraph_data = []
+            for i, result in enumerate(results):
+                opengraph_data.append({
+                    **result,
+                    "tab_id": request.tabs[i].id,
+                    "tab_title": request.tabs[i].title,
+                    "is_screenshot": result.get("is_screenshot", False),
+                })
+            
+            print(f"[API] Processed {len(opengraph_data)} items (backend fetch)")
         
         # 统计截图数量
         screenshot_count = sum(1 for item in opengraph_data if item.get("is_screenshot", False))
-        print(f"[API] OpenGraph data: {len(opengraph_data)} items, {screenshot_count} screenshots")
+        local_count = sum(1 for item in opengraph_data if item.get("is_local_fetch", False))
+        print(f"[API] OpenGraph data: {len(opengraph_data)} items, {screenshot_count} screenshots, {local_count} local fetches")
         
         return {"ok": True, "data": opengraph_data}
     except Exception as e:
