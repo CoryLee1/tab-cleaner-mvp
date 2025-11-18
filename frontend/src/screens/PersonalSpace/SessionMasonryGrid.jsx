@@ -107,24 +107,14 @@ export const SessionMasonryGrid = ({
   };
 
   // 处理 Session 全部打开
+  // 注意：只通知父组件，不在这里打开 URL，避免重复打开
   const handleSessionOpenAll = (session, selectedIds) => {
-    const urlsToOpen = selectedIds.size > 0
-      ? session.opengraphData
-          .filter(item => selectedIds.has(item.id))
-          .map(item => item.url)
-          .filter(Boolean)
-      : session.opengraphData
-          .map(item => item.url)
-          .filter(Boolean);
-
-    if (urlsToOpen.length > 0) {
-      urlsToOpen.forEach(url => {
-        chrome.tabs.create({ url });
-      });
-    }
-
+    // 将 Set 转换为 Array（如果父组件需要）
+    const selectedIdsArray = selectedIds.size > 0 ? Array.from(selectedIds) : null;
+    
+    // 只调用父组件的回调，让父组件统一处理打开逻辑
     if (onSessionOpenAll) {
-      onSessionOpenAll(session.id, selectedIds);
+      onSessionOpenAll(session.id, selectedIdsArray);
     }
   };
 

@@ -1185,7 +1185,10 @@ export const PersonalSpace = () => {
               .map(item => item.url)
               .filter(Boolean);
 
-        urlsToOpen.forEach(url => {
+        // 去重：使用 Set 确保每个 URL 只打开一次
+        const uniqueUrls = [...new Set(urlsToOpen)];
+        
+        uniqueUrls.forEach(url => {
           chrome.tabs.create({ url });
         });
       }, [sessions]);
