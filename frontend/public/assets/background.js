@@ -1,5 +1,8 @@
 // assets/background.js
 
+// 导入 API 配置
+importScripts('api_config.js');
+
 /**
  * 判断 URL 是否为文档类网页（应使用截图）
  */
@@ -362,8 +365,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
         
+        // 获取 API 地址
+        const apiUrl = API_CONFIG.getBaseUrlSync();
+        const opengraphUrl = `${apiUrl}/api/v1/tabs/opengraph`;
+        
         try {
-          response = await fetch('http://localhost:8000/api/v1/tabs/opengraph', {
+          response = await fetch(opengraphUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -386,7 +393,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           if (fetchError.name === 'AbortError') {
             throw new Error('请求超时：后端服务器响应时间过长（超过30秒），请检查服务器状态');
           } else if (fetchError.message && (fetchError.message.includes('Failed to fetch') || fetchError.message.includes('NetworkError'))) {
-            throw new Error('无法连接到后端服务器（http://localhost:8000）。请确保：\n1. 后端服务已启动\n2. 后端服务运行在 http://localhost:8000\n3. 没有防火墙阻止连接');
+            throw new Error(`无法连接到后端服务器（${apiUrl}）。请确保：\n1. 后端服务已启动\n2. 后端服务运行在 ${apiUrl}\n3. 没有防火墙阻止连接`);
           } else {
             throw new Error(`网络请求失败：${fetchError.message || fetchError.toString()}`);
           }
@@ -428,7 +435,8 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
             }
             
             try {
-              const response = await fetch('http://localhost:8000/api/v1/search/embedding', {
+              const embeddingUrl = `${apiUrl}/api/v1/search/embedding`;
+              const response = await fetch(embeddingUrl, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -507,14 +515,16 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           currentSessionId: sessionId, // 设置当前 session
         });
 
-        // 关闭所有标签页（OpenGraph 已获取，可以关闭了）
+        console.log(`[Tab Cleaner Background] ✓ All OpenGraph data fetched and saved (${itemsWithEmbeddings.length} items)`);
+
+        // 关闭所有标签页（OpenGraph 已获取完成，可以关闭了）
         // 对于文档类且 OpenGraph 失败的，后端会使用截图/文档卡片，不需要保持标签页打开
         const allTabIds = uniqueTabs
           .map(tab => tab.id)
           .filter(id => id !== undefined);
         
         if (allTabIds.length > 0) {
-          console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs after OpenGraph fetch...`);
+          console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs...`);
           // 逐个关闭，避免一个失败导致全部失败
           for (const tabId of allTabIds) {
             try {
@@ -524,12 +534,15 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
               console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed or invalid:`, error.message);
             }
           }
+          console.log(`[Tab Cleaner Background] ✓ All tabs closed`);
         }
 
-        // 打开个人空间
-        chrome.tabs.create({
+        // 最后打开个人空间展示结果
+        console.log(`[Tab Cleaner Background] Opening personal space...`);
+        await chrome.tabs.create({
           url: chrome.runtime.getURL("personalspace.html")
         });
+        console.log(`[Tab Cleaner Background] ✓ Personal space opened`);
 
         sendResponse({ ok: true, data: opengraphData });
       } catch (error) {
@@ -538,7 +551,8 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         // 提供更详细的错误信息
         let errorMessage = error.message || '未知错误';
         if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
-          errorMessage = '无法连接到后端服务器。请确保：\n1. 后端服务已启动（运行在 http://localhost:8000）\n2. 后端服务正常运行\n3. 没有防火墙阻止连接';
+          const apiUrl = API_CONFIG.getBaseUrlSync();
+          errorMessage = `无法连接到后端服务器。请确保：\n1. 后端服务已启动（运行在 ${apiUrl}）\n2. 后端服务正常运行\n3. 没有防火墙阻止连接`;
         }
         
         // 即使失败，也尝试打开个人空间（使用之前保存的数据）
@@ -626,9 +640,13 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+        // 获取 API 地址
+        const apiUrl = API_CONFIG.getBaseUrlSync();
+        const opengraphUrl = `${apiUrl}/api/v1/tabs/opengraph`;
+
         let response;
         try {
-          response = await fetch('http://localhost:8000/api/v1/tabs/opengraph', {
+          response = await fetch(opengraphUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -758,9 +776,13 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 30000);
         
+        // 获取 API 地址
+        const apiUrl = API_CONFIG.getBaseUrlSync();
+        const opengraphUrl = `${apiUrl}/api/v1/tabs/opengraph`;
+        
         let response;
         try {
-          response = await fetch('http://localhost:8000/api/v1/tabs/opengraph', {
+          response = await fetch(opengraphUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -796,7 +818,8 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
               await new Promise(resolve => setTimeout(resolve, 50));
             }
             try {
-              const embedResponse = await fetch('http://localhost:8000/api/v1/search/embedding', {
+              const embeddingUrl = `${apiUrl}/api/v1/search/embedding`;
+              const embedResponse = await fetch(embeddingUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -864,9 +887,12 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
           currentSessionId: sessionId,
         });
 
-        // 关闭所有标签页
+        console.log(`[Tab Cleaner Background] ✓ All OpenGraph data fetched and saved (${itemsWithEmbeddings.length} items)`);
+
+        // 关闭所有标签页（OpenGraph 已获取完成，可以关闭了）
         const allTabIds = uniqueTabs.map(tab => tab.id).filter(id => id !== undefined);
         if (allTabIds.length > 0) {
+          console.log(`[Tab Cleaner Background] Closing ${allTabIds.length} tabs...`);
           for (const tabId of allTabIds) {
             try {
               await chrome.tabs.remove(tabId);
@@ -874,12 +900,15 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
               console.warn(`[Tab Cleaner Background] Tab ${tabId} already closed:`, error.message);
             }
           }
+          console.log(`[Tab Cleaner Background] ✓ All tabs closed`);
         }
 
-        // 打开个人空间
-        chrome.tabs.create({
+        // 最后打开个人空间展示结果
+        console.log(`[Tab Cleaner Background] Opening personal space...`);
+        await chrome.tabs.create({
           url: chrome.runtime.getURL("personalspace.html")
         });
+        console.log(`[Tab Cleaner Background] ✓ Personal space opened`);
 
         sendResponse({ ok: true, data: opengraphData });
       } catch (error) {

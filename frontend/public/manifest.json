@@ -29,5 +29,8 @@
       ],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://tab-cleaner-mvp-production.up.railway.app http://localhost:8000"
+  }
 }

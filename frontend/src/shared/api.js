@@ -1,4 +1,17 @@
-const API = "http://localhost:8000/api/v1";
+// API 配置 - 默认使用 Railway 生产环境
+// 如果需要本地开发，可以通过 chrome.storage.local.set({ use_local_api: true }) 切换
+const RAILWAY_API_URL = 'https://tab-cleaner-mvp-production.up.railway.app';
+const LOCAL_API_URL = 'http://localhost:8000';
+
+// 获取 API 基础 URL
+function getApiBaseUrl() {
+  // 默认使用 Railway 生产环境
+  // 可以通过 chrome.storage.local.get(['use_local_api']) 检查是否需要使用本地
+  return RAILWAY_API_URL;
+}
+
+const API_BASE = getApiBaseUrl();
+const API = `${API_BASE}/api/v1`;
 
 export async function startSession() {
   const resp = await fetch(API + "/sessions", { method: "POST" });
@@ -26,7 +39,7 @@ export async function shareSession() {
     body: JSON.stringify({ session_id })
   });
   const data = await resp.json();
-  const shareUrl = "http://localhost:8000" + data.share_url;
+  const shareUrl = API_BASE + data.share_url;
   await navigator.clipboard.writeText(shareUrl);
   return shareUrl;
 }
