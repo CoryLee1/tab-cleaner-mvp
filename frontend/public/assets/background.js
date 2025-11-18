@@ -372,22 +372,37 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
             try {
               // 从 content script 获取本地 OpenGraph 数据
               const localOG = await chrome.tabs.sendMessage(tab.id, { action: 'fetch-opengraph' });
-              if (localOG && localOG.success) {
+              
+              // 添加调试日志
+              console.log(`[Tab Cleaner Background] Local OG result for ${tab.url.substring(0, 50)}...:`, {
+                success: localOG?.success,
+                hasTitle: !!(localOG?.title),
+                hasImage: !!(localOG?.image),
+                title: localOG?.title?.substring(0, 30),
+                error: localOG?.error
+              });
+              
+              if (localOG) {
+                // 即使 success 为 false，也返回抓取到的数据（可能有一些数据）
                 return { 
                   ...localOG, 
                   tab_id: tab.id, 
                   tab_title: tab.title,
                   id: localOG.id || `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  // 确保有 URL 和 title
+                  url: localOG.url || tab.url,
+                  title: localOG.title || tab.title || tab.url,
                 };
               }
-              // 如果本地抓取失败，创建一个基础记录
+              
+              // 如果 localOG 为空，创建一个基础记录
               return {
                 url: tab.url,
                 title: tab.title || tab.url,
                 tab_id: tab.id,
                 tab_title: tab.title,
                 success: false,
-                error: 'Local OpenGraph fetch failed',
+                error: 'Local OpenGraph fetch returned empty',
                 id: `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               };
             } catch (error) {
@@ -1006,22 +1021,37 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
             try {
               // 从 content script 获取本地 OpenGraph 数据
               const localOG = await chrome.tabs.sendMessage(tab.id, { action: 'fetch-opengraph' });
-              if (localOG && localOG.success) {
+              
+              // 添加调试日志
+              console.log(`[Tab Cleaner Background] Local OG result for ${tab.url.substring(0, 50)}...:`, {
+                success: localOG?.success,
+                hasTitle: !!(localOG?.title),
+                hasImage: !!(localOG?.image),
+                title: localOG?.title?.substring(0, 30),
+                error: localOG?.error
+              });
+              
+              if (localOG) {
+                // 即使 success 为 false，也返回抓取到的数据（可能有一些数据）
                 return { 
                   ...localOG, 
                   tab_id: tab.id, 
                   tab_title: tab.title,
                   id: localOG.id || `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  // 确保有 URL 和 title
+                  url: localOG.url || tab.url,
+                  title: localOG.title || tab.title || tab.url,
                 };
               }
-              // 如果本地抓取失败，创建一个基础记录
+              
+              // 如果 localOG 为空，创建一个基础记录
               return {
                 url: tab.url,
                 title: tab.title || tab.url,
                 tab_id: tab.id,
                 tab_title: tab.title,
                 success: false,
-                error: 'Local OpenGraph fetch failed',
+                error: 'Local OpenGraph fetch returned empty',
                 id: `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               };
             } catch (error) {
