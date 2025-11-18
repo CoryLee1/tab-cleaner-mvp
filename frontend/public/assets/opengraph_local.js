@@ -198,8 +198,9 @@
         success: result.success
       });
 
-      // 12. 如果成功提取了数据，保存到本地存储（作为后备）
-      if (result.success && typeof chrome !== 'undefined' && chrome.storage) {
+      // 12. 无论成功与否，都保存到本地存储（作为后备）
+      // 这样即使消息传递失败，background.js 也能从缓存读取
+      if (typeof chrome !== 'undefined' && chrome.storage) {
         try {
           const storageKey = `opengraph_cache_${result.url}`;
           chrome.storage.local.set({
@@ -213,6 +214,7 @@
           });
           
           // 同时保存到最近提取的列表（用于 personal space 读取）
+          // 即使 success 为 false，也保存（可能有一些数据）
           chrome.storage.local.get(['recent_opengraph'], (items) => {
             const recent = items.recent_opengraph || [];
             // 移除相同 URL 的旧记录
@@ -226,7 +228,7 @@
             // 只保留最近 100 条
             const limited = filtered.slice(0, 100);
             chrome.storage.local.set({ recent_opengraph: limited }, () => {
-              console.log('[OpenGraph Local] ✅ Added to recent_opengraph list');
+              console.log('[OpenGraph Local] ✅ Added to recent_opengraph list (success:', result.success, ')');
             });
           });
         } catch (storageError) {
