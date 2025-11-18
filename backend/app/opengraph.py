@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from typing import Dict, List, Optional, Tuple
 import asyncio
 import json
+import re
 from urllib.parse import urljoin
 
 # Screenshot 功能已移除
@@ -37,6 +38,140 @@ def best_text(*candidates) -> Optional[str]:
             if t:
                 return t
         return None
+
+
+async def get_pinterest_from_oembed_html(client: httpx.AsyncClient, pin_url: str) -> Dict:
+    """
+    Pinterest 优先：oEmbed HTML 端点
+    从 https://widgets.pinterest.com/oembed.html 获取数据
+    """
+    try:
+        response = await client.get(
+            "https://widgets.pinterest.com/oembed.html",
+            params={"url": pin_url},
+            timeout=15.0
+        )
+        response.raise_for_status()
+        
+        html = response.text
+        final_base = str(response.url)
+        soup = BeautifulSoup(html, "html.parser")
+        
+        # 从 <img> 标签获取图片和标题
+        img = soup.select_one("img")
+        title = img.get("alt") if img and img.has_attr("alt") else None
+        thumb = normalize_img(img.get("src") if img else None, final_base)
+        
+        # 有时存在 <a href="…"> 指回 pin
+        a = soup.select_one("a[href]")
+        href = a["href"] if a else pin_url
+        
+        # 兜底：style 背景图
+        if not thumb:
+            style_img = soup.select_one("[style*='background-image']")
+            if style_img:
+                style_attr = style_img.get("style", "")
+                m = re.search(r"url\(['\"]?(.*?)['\"]?\)", style_attr)
+                if m:
+                    thumb = normalize_img(m.group(1), final_base)
+        
+        if not (title or thumb):
+            raise RuntimeError("oembed.html had no usable content")
+        
+        return {
+            "url": pin_url,
+            "title": title or "",
+            "description": "",
+            "image": thumb or "",
+            "site_name": "Pinterest",
+            "success": True,
+            "error": None,
+            "is_screenshot": False,
+            "needs_screenshot": False,
+            "source": "pinterest:oembed.html"
+        }
+    except Exception as e:
+        raise RuntimeError(f"Pinterest oEmbed HTML failed: {str(e)}")
+
+
+async def get_pinterest_from_jsonld(client: httpx.AsyncClient, pin_url: str) -> Dict:
+    """
+    Pinterest 备胎：从 JSON-LD 或 OG 提取
+    """
+    response = await client.get(pin_url, timeout=15.0)
+    response.raise_for_status()
+    
+    html = response.text
+    final_base = str(response.url)
+    soup = BeautifulSoup(html, "html.parser")
+    
+    # 先扫 JSON-LD
+    for node in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(node.string or "{}")
+        except Exception:
+            continue
+        
+        objs = data if isinstance(data, list) else [data]
+        for obj in objs:
+            if not isinstance(obj, dict):
+                continue
+            
+            name = obj.get("name") or obj.get("headline")
+            image = obj.get("image")
+            if isinstance(image, list):
+                image = image[0] if image else None
+            image = normalize_img(image, final_base)
+            
+            if name or image:
+                return {
+                    "url": pin_url,
+                    "title": name or "",
+                    "description": "",
+                    "image": image or "",
+                    "site_name": "Pinterest",
+                    "success": True,
+                    "error": None,
+                    "is_screenshot": False,
+                    "needs_screenshot": False,
+                    "source": "pinterest:jsonld"
+                }
+    
+    # 再兜底 OG
+    title = best_text(
+        pick_meta(soup, 'meta[property="og:title"]'),
+        pick_meta(soup, 'meta[name="og:title"]'),
+        soup.title.string if soup.title else None
+    )
+    img = best_text(
+        pick_meta(soup, 'meta[property="og:image"]'),
+        pick_meta(soup, 'meta[name="og:image"]')
+    )
+    img = normalize_img(img, final_base)
+    
+    site_name = best_text(
+        pick_meta(soup, 'meta[property="og:site_name"]'),
+        pick_meta(soup, 'meta[name="og:site_name"]')
+    ) or "Pinterest"
+    
+    if title or img:
+        return {
+            "url": pin_url,
+            "title": title or "",
+            "description": best_text(
+                pick_meta(soup, 'meta[property="og:description"]'),
+                pick_meta(soup, 'meta[name="og:description"]')
+            ) or "",
+            "image": img or "",
+            "site_name": site_name,
+            "success": True,
+            "error": None,
+            "is_screenshot": False,
+            "needs_screenshot": False,
+            "source": "pinterest:og-fallback"
+        }
+    
+    raise RuntimeError("No JSON-LD / OG found on pin page")
 
 
 async def get_generic_og(client: httpx.AsyncClient, url: str) -> Dict:
@@ -154,8 +289,21 @@ async def fetch_opengraph(url: str, timeout: float = 15.0) -> Dict:
     
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers) as client:
-            # 统一使用通用 OG/Twitter Card 逻辑（所有站点，包括 Pinterest）
-            result = await get_generic_og(client, url)
+            # Pinterest 特殊处理：优先使用 oEmbed HTML，失败则使用 JSON-LD/OG
+            if "pinterest.com/pin/" in url:
+                try:
+                    # 优先尝试 oEmbed HTML
+                    result = await get_pinterest_from_oembed_html(client, url)
+                except Exception as e1:
+                    try:
+                        # 备胎：JSON-LD 或 OG
+                        result = await get_pinterest_from_jsonld(client, url)
+                    except Exception as e2:
+                        result["error"] = f"Pinterest fetch failed: oEmbed={str(e1)}, JSON-LD={str(e2)}"
+                        result["success"] = False
+            else:
+                # 其他站点：通用 OG/Twitter Card 逻辑
+                result = await get_generic_og(client, url)
             
             # Screenshot 功能已移除，needs_screenshot 始终为 False
             result["needs_screenshot"] = False
@@ -164,7 +312,7 @@ async def fetch_opengraph(url: str, timeout: float = 15.0) -> Dict:
             if result["success"]:
                 await _prefetch_embedding(result)
             
-                return result
+            return result
             
     except Exception as e:
         result["error"] = str(e)
