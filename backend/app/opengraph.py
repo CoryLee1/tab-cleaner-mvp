@@ -258,39 +258,44 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
                 result["image_height"] = None
             
             # 如果 OpenGraph 没有提供尺寸，尝试从图片 URL 获取实际尺寸
+            # 注意：对于小红书等需要登录的网站，跳过验证，保留 URL 让前端浏览器加载
             if result["image"] and result["image"].startswith(('http://', 'https://')) and (not result["image_width"] or not result["image_height"]):
-                try:
-                    from PIL import Image
-                    from io import BytesIO
-                    
-                    # 构建 headers，针对不同网站使用不同的策略
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                        "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    }
-                    
-                    # 小红书图片需要 Referer（包括所有 xhscdn.com 域名）
-                    image_url_lower = result["image"].lower()
-                    if ("xiaohongshu.com" in image_url_lower or 
-                        "picasso-static.xiaohongshu.com" in image_url_lower or
-                        "xhscdn.com" in image_url_lower or
-                        "sns-webpic-qc.xhscdn.com" in image_url_lower):
-                        headers["Referer"] = "https://www.xiaohongshu.com/"
-                        headers["Origin"] = "https://www.xiaohongshu.com"
-                    
-                    async with httpx.AsyncClient(timeout=5.0) as img_client:
-                        img_response = await img_client.get(result["image"], headers=headers)
-                        if img_response.status_code == 200:
-                            img_data = BytesIO(img_response.content)
-                            img = Image.open(img_data)
-                            w, h = img.size
-                            result["image_width"] = w
-                            result["image_height"] = h
-                            print(f"[OpenGraph] Fetched image dimensions from URL: {w}x{h} for {url[:60]}...")
-                except Exception as e:
-                    # 获取图片尺寸失败不影响主流程，只记录日志
-                    print(f"[OpenGraph] Failed to fetch image dimensions from URL for {url[:60]}...: {str(e)}")
+                # 检查是否为小红书（小红书 CDN 可能对后端 IP 403，但浏览器可以正常加载）
+                image_url_lower = result["image"].lower()
+                is_xhs = ("xiaohongshu.com" in image_url_lower or 
+                         "picasso-static.xiaohongshu.com" in image_url_lower or
+                         "xhscdn.com" in image_url_lower or
+                         "sns-webpic-qc.xhscdn.com" in image_url_lower)
+                
+                # 对于小红书，跳过图片尺寸验证，保留 URL 让前端浏览器加载
+                if is_xhs:
+                    print(f"[OpenGraph] Skipping image size validation for XHS (preserving URL for frontend): {result['image'][:80]}...")
+                else:
+                    # 非小红书网站，尝试获取图片尺寸
+                    try:
+                        from PIL import Image
+                        from io import BytesIO
+                        
+                        # 构建 headers
+                        headers = {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                        }
+                        
+                        async with httpx.AsyncClient(timeout=5.0) as img_client:
+                            img_response = await img_client.get(result["image"], headers=headers)
+                            if img_response.status_code == 200:
+                                img_data = BytesIO(img_response.content)
+                                img = Image.open(img_data)
+                                w, h = img.size
+                                result["image_width"] = w
+                                result["image_height"] = h
+                                print(f"[OpenGraph] Fetched image dimensions from URL: {w}x{h} for {url[:60]}...")
+                    except Exception as e:
+                        # 获取图片尺寸失败不影响主流程，只记录日志
+                        # 重要：不要清空 result["image"]，保留 URL 让前端浏览器加载
+                        print(f"[OpenGraph] Failed to fetch image dimensions from URL for {url[:60]}...: {str(e)} (preserving image URL)")
             
             result["site_name"] = og_site_name.get('content', '') if og_site_name else ''
             
