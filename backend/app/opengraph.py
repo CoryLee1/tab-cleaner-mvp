@@ -307,16 +307,25 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
             response_url_str = str(response.url) if hasattr(response.url, '__str__') else response.url
             image_url, image_source = get_best_image_candidate(soup, response_url_str)
             
-            if image_url:
-                # 找到了图片（首图或 OG/Twitter Card），不需要截图
-                result["image"] = image_url
-                result["needs_screenshot"] = False  # 明确设置为 False
+            # 默认 needs_screenshot = False（已在初始化时设置）
+            # 先正常获取图片，不管是什么网站（Pinterest、Instagram、XHS 等）都正常获取
+            if image_url and image_url.strip():
+                # 找到了图片（首图或 OG/Twitter Card），设置图片，保持 needs_screenshot = False
+                result["image"] = image_url.strip()
+                result["needs_screenshot"] = False
                 print(f"[OpenGraph] Found image via {image_source}: {image_url[:80]}...")
             else:
-                # 所有 HTML 层都没有找到图片，标记需要截图
+                # 没有找到图片（image_url 为空或只有空白）
                 result["image"] = ""
-                result["needs_screenshot"] = True
-                print(f"[OpenGraph] No image found in HTML, marking needs_screenshot=True")
+                # 只有当是文档类 URL 时，才设置 needs_screenshot = True
+                is_doc_like = is_doc_like_url(url)
+                if is_doc_like:
+                    result["needs_screenshot"] = True
+                    print(f"[OpenGraph] No image found in HTML for doc-like URL, marking needs_screenshot=True: {url[:60]}...")
+                else:
+                    # 非文档类 URL，即使没有图片也保持 needs_screenshot = False
+                    result["needs_screenshot"] = False
+                    print(f"[OpenGraph] No image found in HTML for non-doc URL, keeping needs_screenshot=False: {url[:60]}...")
             
             # 提取图片尺寸（如果 OpenGraph 提供了）
             if og_image_width and og_image_width.get('content'):
@@ -388,14 +397,15 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
             result["site_name"] = og_site_name.get('content', '') if og_site_name else ''
             
             # 如果 OpenGraph 抓取成功且有图片，立即预取 embedding
-            if result["image"]:
+            if result["image"] and result["image"].strip():
                 result["success"] = True
                 # 立即预取 embedding（等待完成，确保返回时已有 embedding）
                 await _prefetch_embedding(result)
                 return result
             
             # 如果 OpenGraph 抓取成功但无图片，检查是否为文档类
-            # 只有文档类才使用截图/文档卡片，普通网页即使没有图片也返回成功
+            # 注意：needs_screenshot 已经在上面根据 is_doc_like_url 设置好了
+            # 这里只处理文档类的截图/文档卡片生成
             is_doc_like = is_doc_like_url(url)
             if is_doc_like and use_screenshot_fallback and SCREENSHOT_AVAILABLE:
                 print(f"[OpenGraph] No og:image found for doc-like URL, using screenshot fallback: {url[:60]}...")
