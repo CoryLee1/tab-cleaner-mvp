@@ -241,8 +241,51 @@ export const PersonalSpace = () => {
     }
 
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['opengraphData', 'currentSessionId'], (result) => {
+      chrome.storage.local.get(['opengraphData', 'currentSessionId', 'recent_opengraph'], (result) => {
         try {
+          // 如果有 recent_opengraph 但没有 sessions，尝试使用它
+          if (sessions.length === 0 && result.recent_opengraph && result.recent_opengraph.length > 0) {
+            console.log('[PersonalSpace] Found recent_opengraph, creating session from it...', result.recent_opengraph.length, 'items');
+            const validOG = result.recent_opengraph.filter(item => 
+              item && 
+              typeof item === 'object' && 
+              (item.success || item.is_doc_card) &&  
+              (item.image || (item.title && item.title !== item.url))
+            );
+            
+            if (validOG.length > 0) {
+              const newSession = createSession(validOG);
+              console.log('[PersonalSpace] Created session from recent_opengraph:', newSession);
+              
+              const positionedOG = calculateRadialLayout(validOG, {
+                centerX: 720,
+                centerY: 512,
+              }).map((og, index) => ({
+                ...og,
+                id: og.id || `og-${index}-${Date.now()}`,
+              }));
+              setOpengraphData(positionedOG);
+              setShowOriginalImages(false);
+              
+              setTimeout(() => {
+                setClusters(prev => {
+                  if (prev.length === 0) {
+                    return [{
+                      id: 'default-cluster',
+                      name: '未分类',
+                      type: 'default',
+                      items: positionedOG,
+                      center: { x: 720, y: 512 },
+                      radius: 200,
+                      item_count: positionedOG.length,
+                    }];
+                  }
+                  return prev;
+                });
+              }, 100);
+            }
+          }
+          
           // 如果有旧的 opengraphData 但没有 sessions，迁移到第一个 session
           if (sessions.length === 0 && result.opengraphData) {
             const ogData = Array.isArray(result.opengraphData) 
