@@ -15,17 +15,34 @@ from .config import (
 
 
 async def download_image(image_url: str, timeout: float = 10.0) -> Optional[bytes]:
+    """
+    下载图片数据
+    支持小红书等需要特殊 headers 的网站
+    """
     try:
+        # 构建 headers，针对不同网站使用不同的策略
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "no-cache",
+        }
+        
+        # 小红书图片需要 Referer
+        if "xiaohongshu.com" in image_url.lower() or "picasso-static.xiaohongshu.com" in image_url.lower():
+            headers["Referer"] = "https://www.xiaohongshu.com/"
+            headers["Origin"] = "https://www.xiaohongshu.com"
+        
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            resp = await client.get(
-                image_url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-            )
+            resp = await client.get(image_url, headers=headers)
             resp.raise_for_status()
             if len(resp.content) > MAX_IMAGE_SIZE:
+                print(f"[Preprocess] Image too large: {len(resp.content)} bytes, skipping")
                 return None
             return resp.content
-    except Exception:
+    except Exception as e:
+        print(f"[Preprocess] Error downloading image {image_url[:60]}...: {e}")
         return None
 
 

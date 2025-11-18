@@ -37,6 +37,7 @@ TARGET_IMAGE_DIMENSION = 1024  # 目标尺寸，用于归一化
 async def download_image(image_url: str, timeout: float = 10.0) -> Optional[bytes]:
     """
     下载图片数据
+    支持小红书等需要特殊 headers 的网站
     
     Args:
         image_url: 图片URL
@@ -46,11 +47,22 @@ async def download_image(image_url: str, timeout: float = 10.0) -> Optional[byte
         图片的二进制数据，失败返回None
     """
     try:
+        # 构建 headers，针对不同网站使用不同的策略
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "no-cache",
+        }
+        
+        # 小红书图片需要 Referer
+        if "xiaohongshu.com" in image_url.lower() or "picasso-static.xiaohongshu.com" in image_url.lower():
+            headers["Referer"] = "https://www.xiaohongshu.com/"
+            headers["Origin"] = "https://www.xiaohongshu.com"
+        
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(
-                image_url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            )
+            response = await client.get(image_url, headers=headers)
             response.raise_for_status()
             
             # 检查文件大小
@@ -60,7 +72,7 @@ async def download_image(image_url: str, timeout: float = 10.0) -> Optional[byte
             
             return response.content
     except Exception as e:
-        print(f"[Search] Error downloading image {image_url}: {e}")
+        print(f"[Search] Error downloading image {image_url[:60]}...: {e}")
         return None
 
 

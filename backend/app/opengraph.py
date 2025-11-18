@@ -164,10 +164,21 @@ async def fetch_opengraph(url: str, timeout: float = 10.0, use_screenshot_fallba
                 try:
                     from PIL import Image
                     from io import BytesIO
+                    
+                    # 构建 headers，针对不同网站使用不同的策略
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    }
+                    
+                    # 小红书图片需要 Referer
+                    if "xiaohongshu.com" in result["image"].lower() or "picasso-static.xiaohongshu.com" in result["image"].lower():
+                        headers["Referer"] = "https://www.xiaohongshu.com/"
+                        headers["Origin"] = "https://www.xiaohongshu.com"
+                    
                     async with httpx.AsyncClient(timeout=5.0) as img_client:
-                        img_response = await img_client.get(result["image"], headers={
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                        })
+                        img_response = await img_client.get(result["image"], headers=headers)
                         if img_response.status_code == 200:
                             img_data = BytesIO(img_response.content)
                             img = Image.open(img_data)

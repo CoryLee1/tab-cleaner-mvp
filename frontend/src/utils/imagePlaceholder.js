@@ -215,6 +215,34 @@ export const generateTextPlaceholder = (og, width = 200, height = 150) => {
     ? '0 1px 2px rgba(255,255,255,0.5)' 
     : '0 1px 2px rgba(0,0,0,0.3)';
   
+  // 清理文本，移除可能导致 URI 编码失败的字符
+  const cleanText = (text) => {
+    if (!text || typeof text !== 'string') return '';
+    // 移除控制字符和无效的 Unicode 字符
+    return text
+      .replace(/[\x00-\x1F\x7F-\x9F]/g, '') // 移除控制字符
+      .replace(/[\uFFFE\uFFFF]/g, '') // 移除无效的 Unicode 字符
+      .trim();
+  };
+  
+  // 安全地编码 SVG
+  const safeEncodeSVG = (svgString) => {
+    try {
+      return encodeURIComponent(svgString);
+    } catch (e) {
+      console.warn('[imagePlaceholder] encodeURIComponent failed, using fallback:', e);
+      // 如果编码失败，返回一个简单的占位符
+      return encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+          <rect width="100%" height="100%" fill="${color}"/>
+          <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-size="14" fill="${textColor}">
+            ${cleanText(displayText) || 'No Title'}
+          </text>
+        </svg>
+      `);
+    }
+  };
+  
   // 如果是多行，生成多行文本
   if (lines.length > 1) {
     const lineHeight = fontSize + 4;
@@ -223,6 +251,8 @@ export const generateTextPlaceholder = (og, width = 200, height = 150) => {
     
     const textElements = lines.map((line, index) => {
       const y = startY + index * lineHeight;
+      const cleanedLine = cleanText(line);
+      const displayLine = cleanedLine.length > 25 ? cleanedLine.substring(0, 25) + '...' : cleanedLine;
       return `<text 
         x="50%" 
         y="${y}" 
@@ -234,20 +264,23 @@ export const generateTextPlaceholder = (og, width = 200, height = 150) => {
         fill="${textColor}"
         style="text-shadow: ${textShadow};"
       >
-        ${line.length > 25 ? line.substring(0, 25) + '...' : line}
+        ${displayLine}
       </text>`;
     }).join('');
     
-    return `data:image/svg+xml,${encodeURIComponent(`
+    const svgString = `
       <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
         <rect width="100%" height="100%" fill="${color}"/>
         ${textElements}
       </svg>
-    `)}`;
+    `;
+    
+    return `data:image/svg+xml,${safeEncodeSVG(svgString)}`;
   }
   
   // 单行文本
-  return `data:image/svg+xml,${encodeURIComponent(`
+  const cleanedDisplayText = cleanText(displayText);
+  const svgString = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
       <rect width="100%" height="100%" fill="${color}"/>
       <text 
@@ -261,10 +294,12 @@ export const generateTextPlaceholder = (og, width = 200, height = 150) => {
         fill="${textColor}"
         style="text-shadow: ${textShadow};"
       >
-        ${displayText}
+        ${cleanedDisplayText}
       </text>
     </svg>
-  `)}`;
+  `;
+  
+  return `data:image/svg+xml,${safeEncodeSVG(svgString)}`;
 };
 
 /**
@@ -281,7 +316,27 @@ export const generateInitialsPlaceholder = (og, width = 200, height = 150) => {
     ? '0 1px 2px rgba(255,255,255,0.5)' 
     : '0 2px 4px rgba(0,0,0,0.3)';
   
-  return `data:image/svg+xml,${encodeURIComponent(`
+  // 安全地编码 SVG
+  const safeEncodeSVG = (svgString) => {
+    try {
+      return encodeURIComponent(svgString);
+    } catch (e) {
+      console.warn('[imagePlaceholder] encodeURIComponent failed, using fallback:', e);
+      // 如果编码失败，返回一个简单的占位符
+      return encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+          <rect width="100%" height="100%" fill="${color}"/>
+          <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-size="48" fill="${textColor}">
+            ${initials || '?'}
+          </text>
+        </svg>
+      `);
+    }
+  };
+  
+  const cleanedInitials = initials && typeof initials === 'string' ? initials.replace(/[\x00-\x1F\x7F-\x9F\uFFFE\uFFFF]/g, '') : '?';
+  
+  const svgString = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
       <rect width="100%" height="100%" fill="${color}"/>
       <text 
@@ -296,10 +351,12 @@ export const generateInitialsPlaceholder = (og, width = 200, height = 150) => {
         opacity="0.9"
         style="text-shadow: ${textShadow};"
       >
-        ${initials}
+        ${cleanedInitials}
       </text>
     </svg>
-  `)}`;
+  `;
+  
+  return `data:image/svg+xml,${safeEncodeSVG(svgString)}`;
 };
 
 /**

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -75,6 +76,22 @@ if static_dir.exists() and static_dir.is_dir():
 @app.get("/")
 def root():
     return {"ok": True, "message": "Hello Tab Cleaner"}
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """返回 favicon 图标"""
+    # 优先尝试 .ico 格式
+    favicon_path = Path(__file__).parent / "static" / "favicon.ico"
+    if not favicon_path.exists():
+        # 如果没有 .ico，尝试 .png
+        favicon_path = Path(__file__).parent / "static" / "favicon.png"
+    
+    if favicon_path.exists():
+        return FileResponse(favicon_path)
+    # 如果没有 favicon，返回 204 No Content
+    from fastapi.responses import Response
+    return Response(status_code=204)
 
 
 # OpenGraph API
