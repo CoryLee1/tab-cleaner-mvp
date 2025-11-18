@@ -4,12 +4,30 @@
 
   // 加载本地 OpenGraph 抓取工具
   (function loadOpenGraphLocal() {
-    if (window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED) return;
+    if (window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED) {
+      console.log('[Tab Cleaner] OpenGraph local already loaded');
+      return;
+    }
     window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED = true;
+    
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('assets/opengraph_local.js');
-    script.onload = () => script.remove();
-    script.onerror = () => script.remove();
+    script.onload = () => {
+      console.log('[Tab Cleaner] OpenGraph local script loaded');
+      // 等待一下确保函数已定义
+      setTimeout(() => {
+        if (typeof window.__TAB_CLEANER_GET_OPENGRAPH === 'function') {
+          console.log('[Tab Cleaner] ✅ OpenGraph function ready');
+        } else {
+          console.warn('[Tab Cleaner] ⚠️ OpenGraph function not found after load');
+        }
+      }, 100);
+      // 不立即移除，保留脚本以便函数可用
+    };
+    script.onerror = (e) => {
+      console.error('[Tab Cleaner] Failed to load opengraph_local.js:', e);
+      window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED = false; // 允许重试
+    };
     (document.head || document.documentElement).appendChild(script);
   })();
 
