@@ -237,6 +237,38 @@ async def generate_embeddings(request: EmbeddingRequest):
             print(f"[API] Generating embeddings for {len(items_to_process)} new items")
             processed_items = await process_opengraph_for_search(items_to_process)
             
+            # 存储到数据库（如果配置了）
+            if db_host:
+                try:
+                    from vector_db import upsert_opengraph_item
+                    stored_count = 0
+                    for item in processed_items:
+                        if item.get("text_embedding") or item.get("image_embedding"):
+                            success = await upsert_opengraph_item(
+                                url=item.get("url"),
+                                title=item.get("title"),
+                                description=item.get("description"),
+                                image=item.get("image"),
+                                site_name=item.get("site_name"),
+                                tab_id=item.get("tab_id"),
+                                tab_title=item.get("tab_title"),
+                                text_embedding=item.get("text_embedding"),
+                                image_embedding=item.get("image_embedding"),
+                                metadata={
+                                    "is_screenshot": item.get("is_screenshot", False),
+                                    "is_doc_card": item.get("is_doc_card", False),
+                                    "success": item.get("success", False),
+                                }
+                            )
+                            if success:
+                                stored_count += 1
+                    if stored_count > 0:
+                        print(f"[API] ✓ Stored {stored_count} items to vector DB")
+                except Exception as e:
+                    print(f"[API] ⚠ Failed to store embeddings to DB: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
             # 添加到结果中
             for item in processed_items:
                 has_text_emb = item.get("text_embedding") and len(item.get("text_embedding", [])) > 0

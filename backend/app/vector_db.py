@@ -12,9 +12,11 @@ from datetime import datetime
 # 数据库连接配置
 DB_HOST = os.getenv("ADBPG_HOST", "gp-uf6j424dtk2ww5291o-master.gpdb.rds.aliyuncs.com")
 DB_PORT = int(os.getenv("ADBPG_PORT", "5432"))
-# 注意：阿里云 ADB PostgreSQL 向量数据库使用 knowledgebase 库
-# 如果使用 Namespace，数据会存储在 knowledgebase 库中对应的 Schema
-DB_NAME = os.getenv("ADBPG_DBNAME", "knowledgebase")  # 改为 knowledgebase，而不是 postgres
+# 注意：数据库名称由环境变量 ADBPG_DBNAME 决定
+# 默认值是 knowledgebase，但实际运行时可能是 postgres（取决于环境变量配置）
+# 如果使用 Namespace，数据会存储在对应数据库的 Schema 中
+# 实际表路径 = {ADBPG_DBNAME}.{ADBPG_NAMESPACE}.opengraph_items
+DB_NAME = os.getenv("ADBPG_DBNAME", "knowledgebase")
 DB_USER = os.getenv("ADBPG_USER", "cleantab_db")
 DB_PASSWORD = os.getenv("ADBPG_PASSWORD", "CleanTabV5")
 NAMESPACE = os.getenv("ADBPG_NAMESPACE", "cleantab")
@@ -139,7 +141,8 @@ async def init_schema():
         
         async with pool.acquire() as conn:
             # 注意：在阿里云 ADB PostgreSQL 中，Namespace 应该通过 API 创建
-            # 如果 Namespace 已通过 API 创建，对应的 Schema 会自动存在于 knowledgebase 库中
+            # 如果 Namespace 已通过 API 创建，对应的 Schema 会自动存在于当前连接的数据库中
+            # 实际数据库由 ADBPG_DBNAME 环境变量决定（可能是 postgres 或 knowledgebase）
             # 这里只检查 Schema 是否存在，如果不存在会报错（需要先通过 API 创建 Namespace）
             schema_exists = await conn.fetchval(f"""
                 SELECT EXISTS (
