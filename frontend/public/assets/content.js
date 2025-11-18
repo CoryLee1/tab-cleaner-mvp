@@ -511,12 +511,14 @@
 
   function toggleCard() { isVisible ? hideCard() : showCard(); }
 
-  chrome.runtime.onMessage.addListener((req, _s, send) => {
+  chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     if (!req || !req.action) return false;
-    if (req.action === "toggle" || req.action === "toggleCard") { toggleCard(); send?.({ ok: true }); return true; }
-    if (req.action === "show") { showCard(); send?.({ ok: true }); return true; }
-    if (req.action === "hide") { hideCard(); send?.({ ok: true }); return true; }
+    if (req.action === "toggle" || req.action === "toggleCard") { toggleCard(); sendResponse?.({ ok: true }); return true; }
+    if (req.action === "show") { showCard(); sendResponse?.({ ok: true }); return true; }
+    if (req.action === "hide") { hideCard(); sendResponse?.({ ok: true }); return true; }
     if (req.action === "fetch-opengraph") {
+      // 重要：返回 true 保持消息通道开放，以便异步发送响应
+      const send = sendResponse; // 使用 sendResponse 作为 send
       // 处理本地 OpenGraph 抓取请求
       console.log('[Tab Cleaner Content] fetch-opengraph requested');
       console.log('[Tab Cleaner Content] Checking if opengraph_local.js is loaded...');
@@ -608,16 +610,38 @@
                 fullData: data
               });
               
-              // 确保 send 函数可用
-              if (typeof send === 'function') {
+              // 确保 sendResponse 函数可用
+              if (typeof sendResponse === 'function') {
                 try {
-                  send(data);
-                  console.log('[Tab Cleaner Content] ✅ Data sent successfully');
+                  sendResponse(data);
+                  console.log('[Tab Cleaner Content] ✅ Data sent successfully via sendResponse');
                 } catch (sendError) {
                   console.error('[Tab Cleaner Content] ❌ Error sending data:', sendError);
+                  // 如果 sendResponse 失败，尝试使用 chrome.runtime.sendMessage 作为后备
+                  try {
+                    chrome.runtime.sendMessage({
+                      action: 'opengraph-result',
+                      data: data,
+                      tabId: sender?.tab?.id
+                    });
+                    console.log('[Tab Cleaner Content] ✅ Data sent via chrome.runtime.sendMessage as fallback');
+                  } catch (fallbackError) {
+                    console.error('[Tab Cleaner Content] ❌ Fallback sendMessage also failed:', fallbackError);
+                  }
                 }
               } else {
-                console.error('[Tab Cleaner Content] ❌ send function not available');
+                console.error('[Tab Cleaner Content] ❌ sendResponse function not available');
+                // 尝试使用 chrome.runtime.sendMessage 作为后备
+                try {
+                  chrome.runtime.sendMessage({
+                    action: 'opengraph-result',
+                    data: data,
+                    tabId: sender?.tab?.id
+                  });
+                  console.log('[Tab Cleaner Content] ✅ Data sent via chrome.runtime.sendMessage as fallback');
+                } catch (fallbackError) {
+                  console.error('[Tab Cleaner Content] ❌ Fallback sendMessage failed:', fallbackError);
+                }
               }
             }).catch(error => {
               console.error('[Tab Cleaner Content] ❌ Promise rejected:', error);

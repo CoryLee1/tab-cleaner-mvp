@@ -250,20 +250,21 @@
     // 如果页面已经加载完成，直接返回结果（但延迟一下确保动态内容加载）
     if (document.readyState === 'complete') {
       return new Promise((resolve) => {
-        // 即使页面已加载，也等待一下确保动态内容（如 Pinterest）加载完成
+        // 减少等待时间，避免消息通道超时（从 2000ms 减少到 500ms）
+        // Pinterest 等动态内容通常已经加载完成
         setTimeout(() => {
           resolve(extractOpenGraphLocal());
-        }, 2000);
+        }, 500);
       });
     }
     
     // 如果页面还在加载，等待 load 事件
     return new Promise((resolve) => {
       window.addEventListener('load', () => {
-        // 等待动态内容加载（特别是 Pinterest 等动态页面）
+        // 减少等待时间，避免消息通道超时（从 2000ms 减少到 500ms）
         setTimeout(() => {
           resolve(extractOpenGraphLocal());
-        }, 2000);
+        }, 500);
       }, { once: true });
     });
   };
