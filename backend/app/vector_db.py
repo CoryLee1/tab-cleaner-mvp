@@ -245,22 +245,23 @@ async def init_schema():
             
             # 创建向量索引（用于相似度搜索）
             # 注意：如果表中有数据，索引创建可能需要一些时间
+            # 使用阿里云 AnalyticDB 的 FastANN 索引（HNSW + PQ）
             try:
                 await conn.execute(f"""
-                    CREATE INDEX idx_text_embedding 
-                    ON {NAMESPACE}.opengraph_items 
-                    USING ivfflat (text_embedding vector_cosine_ops)
-                    WITH (lists = 100);
+                    CREATE INDEX idx_text_embedding_cosine
+                    ON {NAMESPACE}.opengraph_items
+                    USING ann(text_embedding)
+                    WITH (distancemeasure=cosine, hnsw_m=64, pq_enable=1);
                 """)
             except Exception as e:
                 print(f"[VectorDB] Warning: Could not create text_embedding index: {e}")
             
             try:
                 await conn.execute(f"""
-                    CREATE INDEX idx_image_embedding 
-                    ON {NAMESPACE}.opengraph_items 
-                    USING ivfflat (image_embedding vector_cosine_ops)
-                    WITH (lists = 100);
+                    CREATE INDEX idx_image_embedding_cosine
+                    ON {NAMESPACE}.opengraph_items
+                    USING ann(image_embedding)
+                    WITH (distancemeasure=cosine, hnsw_m=64, pq_enable=1);
                 """)
             except Exception as e:
                 print(f"[VectorDB] Warning: Could not create image_embedding index: {e}")
