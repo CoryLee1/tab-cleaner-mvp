@@ -234,16 +234,20 @@ async def init_schema():
                     print(f"[VectorDB] ✓ Table constraints are valid (single PRIMARY KEY on 'url')")
             
             # 创建索引（无论表是新创建还是已存在）
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_opengraph_url 
-                ON {NAMESPACE}.opengraph_items(url);
-            """)
+            try:
+                await conn.execute(f"""
+                    CREATE INDEX idx_opengraph_url 
+                    ON {NAMESPACE}.opengraph_items(url);
+                """)
+            except Exception as e:
+                # 比如已经存在就会报错，这里直接打印 warning 然后继续
+                print(f"[VectorDB] Warning: could not create idx_opengraph_url: {e}")
             
             # 创建向量索引（用于相似度搜索）
             # 注意：如果表中有数据，索引创建可能需要一些时间
             try:
                 await conn.execute(f"""
-                    CREATE INDEX IF NOT EXISTS idx_text_embedding 
+                    CREATE INDEX idx_text_embedding 
                     ON {NAMESPACE}.opengraph_items 
                     USING ivfflat (text_embedding vector_cosine_ops)
                     WITH (lists = 100);
@@ -253,7 +257,7 @@ async def init_schema():
             
             try:
                 await conn.execute(f"""
-                    CREATE INDEX IF NOT EXISTS idx_image_embedding 
+                    CREATE INDEX idx_image_embedding 
                     ON {NAMESPACE}.opengraph_items 
                     USING ivfflat (image_embedding vector_cosine_ops)
                     WITH (lists = 100);
