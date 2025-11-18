@@ -715,7 +715,9 @@
         }
       } catch (error) {
         console.error('[Tab Cleaner Content] Error in fetch-opengraph:', error);
-        send({ success: false, error: error.message });
+        if (typeof sendResponse === 'function') {
+          sendResponse({ success: false, error: error.message });
+        }
       }
       return true; // 保持消息通道开放
     }
