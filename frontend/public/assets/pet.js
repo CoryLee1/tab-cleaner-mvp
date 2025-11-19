@@ -804,46 +804,62 @@
     });
   }
 
-  // 显示宠物（优化版本：确保初始化完成后再显示）
+  // 显示宠物（优化版本：确保初始化完成后再显示，带重试机制）
   async function showPet() {
-    // ✅ 先确保容器已初始化
-    if (!petContainer || !petInitialized) {
-      await createPet();
-      // 再次检查初始化状态
-      if (!petInitialized) {
-        const initialized = await ensureInitialized();
-        if (!initialized) {
-          console.warn("[Tab Cleaner Pet] Failed to initialize pet container");
+    try {
+      // ✅ 先确保容器已初始化
+      if (!petContainer || !petInitialized) {
+        await createPet();
+        // 再次检查初始化状态
+        if (!petInitialized) {
+          const initialized = await ensureInitialized();
+          if (!initialized) {
+            console.warn("[Tab Cleaner Pet] Failed to initialize pet container, but trying to show anyway...");
+            // ✅ 即使初始化失败，也尝试创建容器（可能 DOM 刚准备好）
+            if (!petContainer) {
+              await createPet();
+            }
+          }
+        }
+      }
+      
+      // 确保容器已创建
+      if (!petContainer) {
+        console.warn("[Tab Cleaner Pet] Failed to create pet container, retrying...");
+        // ✅ 如果容器还没创建，再试一次（可能 DOM 刚准备好）
+        await createPet();
+        if (!petContainer) {
+          console.error("[Tab Cleaner Pet] Still failed to create pet container after retry");
           return;
         }
       }
-    }
-    
-    // 确保容器已创建并初始化
-    if (!petContainer) {
-      console.warn("[Tab Cleaner Pet] Failed to create pet container");
-      return;
-    }
-    
-    // 使用 requestAnimationFrame 确保 DOM 已更新
-    requestAnimationFrame(() => {
-      if (petContainer) {
-        petContainer.style.display = "block";
-        isPetVisible = true;
-        isButtonsVisible = false; // 默认隐藏按钮
-        const shadow = petContainer.shadowRoot;
-        if (shadow) {
-          const choiceOverlay = shadow.querySelector('.choice-overlay');
-          if (choiceOverlay) {
-            choiceOverlay.classList.remove('visible');
+      
+      // 使用 requestAnimationFrame 确保 DOM 已更新
+      requestAnimationFrame(() => {
+        if (petContainer) {
+          petContainer.style.display = "block";
+          isPetVisible = true;
+          isButtonsVisible = false; // 默认隐藏按钮
+          const shadow = petContainer.shadowRoot;
+          if (shadow) {
+            const choiceOverlay = shadow.querySelector('.choice-overlay');
+            if (choiceOverlay) {
+              choiceOverlay.classList.remove('visible');
+            }
           }
+          console.log("[Tab Cleaner Pet] Pet shown successfully");
+          
+          // ✅ 保存状态到存储（同步到所有标签页）
+          savePetState();
         }
-        console.log("[Tab Cleaner Pet] Pet shown successfully");
-        
-        // ✅ 保存状态到存储（同步到所有标签页）
+      });
+    } catch (err) {
+      console.error("[Tab Cleaner Pet] Error in showPet:", err);
+      // ✅ 即使出错，也尝试保存状态（可能部分成功）
+      if (isPetVisible) {
         savePetState();
       }
-    });
+    }
   }
 
   // 隐藏宠物
