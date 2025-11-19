@@ -12,10 +12,13 @@
 - 📊 **详情显示**：点击 Details 按钮可显示/隐藏插件状态信息（开启时间等）
 - 💡 **Tooltip 提示**：所有按钮都有悬停提示，显示功能说明
 - 🐵 **桌面宠物**：
-  - 点击 Window Button 在浏览器中央召唤桌面宠物
+  - 点击 Window Button 切换宠物显示/隐藏状态
+  - 宠物状态全局同步：在任何标签页召唤宠物，所有标签页都会显示
+  - 宠物位置同步：拖动宠物到新位置，所有标签页的位置都会更新
   - 宠物可以拖动到任意位置（拖动整个宠物容器）
   - 点击宠物头像显示操作菜单（隐藏、桌宠设置、清理当前页Tab、一键清理）
   - 宠物具有完整动画效果和交互体验
+  - 新标签页自动恢复宠物状态和位置
 - 🏠 **个人空间**：
   - 点击卡片上的 Home Button 打开个人空间页面
   - 使用 React + Vite 构建的现代化界面
@@ -316,15 +319,29 @@ npm run dev
 
 #### 桌面宠物实现
 
-桌面宠物功能通过以下架构实现：
+桌面宠物功能通过以下架构实现（v2.4）：
 
-1. **Content Script** → 点击 Window Button 发送消息给 Background Script
-2. **Background Script** → 使用 `chrome.scripting.executeScript` 在页面上下文中：
-   - 设置扩展 ID（用于资源路径）
-   - 加载 `pet.js` 模块
-   - 调用 `toggle()` 方法显示/隐藏宠物
-3. **Pet Module** → 在页面上下文中创建 Shadow DOM，渲染宠物 UI
-4. **拖动功能** → 在宠物容器上添加鼠标事件监听，实现拖动
+1. **Content Scripts 配置** → `manifest.json` 中配置 `pet.js` 和 `content.js` 作为 content scripts
+   - `pet.js` 在 `content.js` 之前加载，确保初始化顺序
+   - 两个脚本都在 content script 环境中运行，都有 `chrome.storage` 访问权限
+
+2. **状态管理** → `pet.js` 作为状态管理中心：
+   - `loadPetState()`: 模块加载时从 `chrome.storage.local` 读取 `petVisible` 和 `petPosition`
+   - `setupStorageSync()`: 监听 `chrome.storage.onChanged`，自动同步所有标签页
+   - `savePetState()`: 显示/隐藏/拖动时保存状态到 storage
+
+3. **窗口按钮切换** → `content.js` 中的窗口按钮点击处理器：
+   - 直接读取 `chrome.storage.local.petVisible`
+   - 翻转值并写回 storage
+   - 不再发送消息到 background script
+
+4. **自动同步** → `pet.js` 的 `setupStorageSync()` 监听器：
+   - 监听到 `petVisible` 变化时，自动调用 `showPet()` 或 `hidePet()`
+   - 监听到 `petPosition` 变化时，自动更新所有标签页的位置
+   - 实现全局状态同步，无需消息传递
+
+5. **Pet Module** → 在 content script 环境中创建 Shadow DOM，渲染宠物 UI
+6. **拖动功能** → 在宠物容器上添加鼠标事件监听，拖动结束时保存位置到 storage
 
 #### 个人空间实现
 
@@ -387,19 +404,21 @@ npm run dev
 
 - **`public/assets/background.js`**：
   - Service Worker，监听插件图标点击，注入 content script
-  - 处理来自 content script 的 "toggle-pet" 消息
-  - 使用 `chrome.scripting.executeScript` 在页面上下文中加载和执行 pet.js
+  - 处理其他消息（如 `open-personalspace`），不再处理 `toggle-pet` 消息（v2.4）
 
 - **`public/assets/content.js`**：
   - Content Script，创建 Shadow DOM 并渲染卡片
-  - 处理 Window Button 点击，发送消息给 background script
+  - 处理 Window Button 点击，直接读写 `chrome.storage.local.petVisible`（v2.4）
+  - 不再发送消息到 background script
   - 使用 IIFE 模式，避免模块冲突
 
 - **`public/assets/pet.js`**：
-  - 宠物模块，独立处理桌面宠物功能
-  - 在页面上下文中执行，创建 Shadow DOM 渲染宠物
+  - 宠物模块，作为 content script 运行（在 `manifest.json` 中配置）
+  - 独立处理桌面宠物功能，创建 Shadow DOM 渲染宠物
+  - 实现状态管理：`loadPetState()`、`savePetState()`、`setupStorageSync()`
+  - 监听 `chrome.storage.onChanged`，自动同步所有标签页的显示状态和位置
   - 实现拖动功能、按钮菜单交互
-  - 使用多种降级方案获取扩展资源 URL
+  - 导出 `window.__TAB_CLEANER_PET` API 对象（`show`, `hide`, `toggle`, `isVisible` 等）
 
 - **`public/assets/card.html`**：卡片 HTML 模板，使用 `{{PLACEHOLDER}}` 占位符
 
@@ -791,7 +810,9 @@ npm install @react-three/fiber @react-three/drei three
 - **宠物不显示**：
   - 检查控制台是否有错误信息
   - 确认 `pet.js` 已正确加载（查看 `[Tab Cleaner Pet] Module loaded successfully!` 日志）
-  - 检查扩展 ID 是否正确设置（查看 `[Tab Cleaner Background] Extension ID` 日志）
+  - 检查 `manifest.json` 中 `content_scripts` 是否包含 `assets/pet.js`
+  - 确认 `chrome.storage.local.petVisible` 是否为 `true`（在扩展的 Storage 中查看）
+  - 检查 `pet.js` 的 `loadPetState()` 是否成功读取 storage
 
 - **图片不显示**：
   - 检查图片文件是否在 `dist/static/img/` 目录中
@@ -863,7 +884,9 @@ npm install @react-three/fiber @react-three/drei three
 
 - **调试宠物模块**：
   - 在页面 Console 中查看 `[Tab Cleaner Pet]` 开头的日志
-  - 检查 `window.__TAB_CLEANER_PET` 对象是否存在
+  - 检查 `window.__TAB_CLEANER_PET` 对象是否存在（content script 环境）
+  - 查看 `chrome.storage.local` 中的 `petVisible` 和 `petPosition` 值
+  - 确认 `setupStorageSync()` 监听器是否正常工作
   - 查看图片 URL 是否正确生成
 
 ## Git 工作流
@@ -909,21 +932,41 @@ git push -u origin main
 - **Content → Background**：`chrome.runtime.sendMessage()` 发送按钮点击事件
 - **自动注入**：如果页面在扩展安装前已打开，点击图标时会自动注入 content script
 
-#### 桌面宠物流程
-- **Content → Background**：点击 Window Button 时，content script 发送 `{ action: "toggle-pet" }` 消息
-- **Background → Page Context**：
-  - 使用 `chrome.scripting.executeScript` 设置扩展 ID
-  - 加载 `pet.js` 文件到页面上下文
-  - 调用 `window.__TAB_CLEANER_PET.toggle()` 方法
-- **Pet Module**：在页面上下文中创建 Shadow DOM，渲染宠物 UI
+#### 桌面宠物流程（v2.4）
+
+1. **页面加载**：
+   - `manifest.json` 自动加载 `pet.js` 和 `content.js` 作为 content scripts
+   - `pet.js` 执行：调用 `loadPetState()` 读取 `chrome.storage.local.petVisible`
+   - 如果 `petVisible` 为 `true`，自动调用 `showPet()` 显示宠物
+   - `pet.js` 调用 `setupStorageSync()` 设置 `chrome.storage.onChanged` 监听器
+
+2. **点击窗口按钮**：
+   - `content.js` 直接读取 `chrome.storage.local.petVisible`
+   - 翻转值：`newVisible = !currentVisible`
+   - 写回 storage：`chrome.storage.local.set({ petVisible: newVisible })`
+   - **不再发送消息到 background script**
+
+3. **状态同步**：
+   - `pet.js` 的 `setupStorageSync()` 监听器监听到 `petVisible` 变化
+   - 自动调用 `showPet()` 或 `hidePet()`
+   - 所有标签页的 `pet.js` 都会收到 `onChanged` 事件，自动同步显示/隐藏
+
+4. **位置同步**：
+   - 用户拖动宠物到新位置
+   - 拖动结束时调用 `savePetState()`，保存位置到 `chrome.storage.local.petPosition`
+   - 所有标签页的 `pet.js` 监听到位置变化，自动更新位置
+
+5. **Pet Module**：在 content script 环境中创建 Shadow DOM，渲染宠物 UI
 
 ### 资源路径获取
 
-由于 `pet.js` 在页面上下文中执行，无法直接访问 `chrome.runtime.getURL()`，因此使用以下降级方案：
+`pet.js` 作为 content script 运行，可以直接访问 `chrome.runtime.getURL()` API，因此资源路径获取更简单：
 
-1. **优先方案**：Background script 通过 `executeScript` 的 `args` 参数传递扩展 ID
-2. **备用方案**：从脚本 URL 中推断扩展 ID
-3. **降级方案**：使用已知的扩展 ID（如果之前访问过）
+1. **直接访问**：使用 `chrome.runtime.getURL()` 获取扩展资源路径
+2. **降级方案**：如果 `chrome.runtime` 不可用，从脚本 URL 中推断扩展 ID
+3. **备用方案**：使用已知的扩展 ID（如果之前访问过）
+
+**注意**：v2.4 之前，`pet.js` 在页面上下文中执行，需要通过 `chrome.scripting.executeScript` 注入，无法直接访问扩展 API。现在作为 content script，可以直接使用所有 Chrome Extension API。
 
 ## 开发注意事项
 
