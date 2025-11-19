@@ -62,6 +62,57 @@
     - 搜索结果按相关性圆形排列（最相关在内环，向外递减）
     - 图片自动归一化处理（缩放、压缩）以节省token成本
     - 支持批量处理，避免API过载
+    - **数据持久化**：所有 OpenGraph 数据和 embedding 向量都保存到向量数据库，支持跨会话搜索
+
+## 数据流程
+
+### OpenGraph 提取与处理流程
+
+```
+1. 页面加载
+   ↓
+   opengraph_local.js 自动提取 OpenGraph 数据
+   ↓
+   保存到 Chrome Storage (recent_opengraph 缓存)
+
+2. 用户点击"一键清理"
+   ↓
+   background.js 收集所有标签页的 OpenGraph 数据
+   ├─ content.js 从缓存读取（优先）
+   └─ 如果缓存没有，fallback 到重新提取
+   ↓
+   保存到 Chrome Storage (sessions)
+   ↓
+   关闭所有标签页
+   ↓
+   打开个人空间并立即渲染（不等待后端）
+
+3. 异步后端处理（不阻塞 UI）
+   ↓
+   background.js 批量发送数据到 /api/v1/search/embedding
+   ↓
+   后端处理：
+   ├─ 检查数据库是否已有 embedding
+   ├─ 如果没有，生成新的 embedding（文本 + 图像）
+   ├─ 保存到向量数据库（Alibaba Cloud AnalyticDB PostgreSQL）
+   └─ 返回 embedding 数据
+   ↓
+   background.js 更新 sessions 中的 embedding 数据
+   ↓
+   个人空间自动刷新显示（通过 storage.onChanged 监听）
+```
+
+### 数据存储位置
+
+- **Chrome Storage (Local)**：
+  - `recent_opengraph`: 最近提取的 OpenGraph 数据缓存（按 URL 索引）
+  - `sessions`: 所有清理会话的数据（包含 OpenGraph 数据和 embedding）
+  - `opengraph_cache_*`: 按 URL 的缓存键
+
+- **向量数据库 (Alibaba Cloud AnalyticDB PostgreSQL)**：
+  - `opengraph_items` 表：存储所有 OpenGraph 数据、文本 embedding、图像 embedding
+  - 支持语义搜索和相关性检索
+  - 使用 HNSW 索引（FastANN）进行快速向量搜索
 
 ## 目录结构
 
