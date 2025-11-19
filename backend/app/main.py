@@ -10,7 +10,7 @@ import json
 import os
 from opengraph import fetch_multiple_opengraph
 from ai_insight import analyze_opengraph_data
-from search import process_opengraph_for_search, search_relevant_items
+from search import process_opengraph_for_search
 from clustering import create_manual_cluster, classify_by_labels, discover_clusters
 from clustering.storage import save_clustering_result, save_multiple_clusters
 
