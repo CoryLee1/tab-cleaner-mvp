@@ -235,9 +235,8 @@ class EmbeddingRequest(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    query_text: Optional[str] = None
-    query_image_url: Optional[str] = None
-    opengraph_items: List[Dict[str, Any]]
+    query: str
+    top_k: Optional[int] = 20
 
 
 @app.post("/api/v1/search/embedding")
@@ -344,130 +343,79 @@ async def generate_embeddings(request: EmbeddingRequest):
 @app.post("/api/v1/search/query")
 async def search_content(request: SearchRequest):
     """
-    搜索相关内容（支持文本和图片查询）
-    优先从向量数据库搜索，如果没有结果再使用传入的 opengraph_items
+    搜索相关内容（从向量数据库检索）
     
     请求参数:
-    - query_text: 查询文本（可选）
-    - query_image_url: 查询图片URL（可选，至少需要提供query_text或query_image_url之一）
-    - opengraph_items: 包含Embedding的OpenGraph数据列表（作为后备方案）
+    - query: 查询文本（必需）
+    - top_k: 返回前 K 个结果（可选，默认 20）
     
     返回:
     - 按相关性排序的OpenGraph数据列表（包含similarity分数）
     """
     try:
-        if not request.query_text and not request.query_image_url:
-            raise HTTPException(status_code=400, detail="至少需要提供query_text或query_image_url之一")
+        if not request.query or not request.query.strip():
+            raise HTTPException(status_code=400, detail="query parameter is required")
         
-        print(f"[API] Search request: query_text='{request.query_text}', query_image_url={request.query_image_url}")
+        top_k = request.top_k or 20
+        print(f"[API] Search request: query='{request.query}', top_k={top_k}")
         
-        # 优先从向量数据库搜索
-        results = []
+        # 检查数据库配置
         db_host = os.getenv("ADBPG_HOST", "")
-        
-        if db_host:
-            try:
-                from vector_db import search_by_text_embedding, search_by_image_embedding
-                from search.embed import embed_text, embed_image
-                from search.preprocess import download_image, process_image
-                
-                # 文本搜索
-                if request.query_text:
-                    try:
-                        # 生成查询文本的 embedding
-                        query_emb = await embed_text(request.query_text)
-                        if query_emb:
-                            # 从数据库搜索
-                            db_results = await search_by_text_embedding(query_emb, top_k=20)
-                            if db_results:
-                                print(f"[API] Found {len(db_results)} results from vector DB")
-                                results.extend(db_results)
-                    except Exception as e:
-                        print(f"[API] Vector DB text search failed: {e}, falling back to local search")
-                
-                # 图像搜索
-                if request.query_image_url:
-                    try:
-                        # 下载并处理图像
-                        image_data = await download_image(request.query_image_url)
-                        if image_data:
-                            img_b64 = process_image(image_data)
-                            if img_b64:
-                                # 生成查询图像的 embedding
-                                query_emb = await embed_image(img_b64)
-                                if query_emb:
-                                    # 从数据库搜索
-                                    db_results = await search_by_image_embedding(query_emb, top_k=20)
-                                    if db_results:
-                                        print(f"[API] Found {len(db_results)} image results from vector DB")
-                                        results.extend(db_results)
-                    except Exception as e:
-                        print(f"[API] Vector DB image search failed: {e}, falling back to local search")
-            except Exception as e:
-                print(f"[API] Vector DB search error: {e}, falling back to local search")
-                import traceback
-                traceback.print_exc()
-        
-        # 如果数据库没有结果，使用传入的 opengraph_items 进行本地搜索
-        if not results and request.opengraph_items:
-            print(f"[API] No DB results, using local search with {len(request.opengraph_items)} items")
-            results = await search_relevant_items(
-                query_text=request.query_text,
-                query_image_url=request.query_image_url,
-                opengraph_items=request.opengraph_items,
-                top_k=20
+        if not db_host:
+            raise HTTPException(
+                status_code=503,
+                detail="Vector database not configured. Please set ADBPG_HOST environment variable."
             )
         
-        # 格式化返回结果
-        result_data = []
-        for item in results[:20]:  # 限制返回 20 个
-            result_data.append({
-                "url": item.get("url"),
+        # 1. 使用 embed_text() 生成查询的文本 embedding
+        from search.embed import embed_text
+        from vector_db import search_by_text_embedding
+        
+        query_embedding = await embed_text(request.query)
+        if not query_embedding:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate query embedding"
+            )
+        
+        print(f"[API] Generated query embedding (dimension: {len(query_embedding)})")
+        
+        # 2. 使用 search_by_text_embedding() 从数据库检索
+        db_results = await search_by_text_embedding(query_embedding, top_k=top_k)
+        
+        if not db_results:
+            print(f"[API] No results found in database for query: '{request.query}'")
+            return {
+                "ok": True,
+                "results": []
+            }
+        
+        print(f"[API] Found {len(db_results)} results from vector DB")
+        
+        # 3. 格式化返回结果（保持与前端 useSearch 兼容）
+        results = []
+        for item in db_results:
+            results.append({
+                "url": item.get("url", ""),
                 "title": item.get("title") or item.get("tab_title", ""),
                 "description": item.get("description", ""),
                 "image": item.get("image", ""),
                 "site_name": item.get("site_name", ""),
                 "tab_id": item.get("tab_id"),
                 "tab_title": item.get("tab_title"),
-                "similarity": item.get("similarity", 0.0)
+                "similarity": float(item.get("similarity", 0.0))
             })
         
-        # 保存搜索结果到本地文件（用于调试）
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            query_safe = (request.query_text or "empty")[:50].replace("/", "_").replace("\\", "_")
-            output_file = Path(__file__).parent / f"search_results_{query_safe}_{timestamp}.json"
-            
-            output_data = {
-                "query": request.query_text,
-                "query_image_url": request.query_image_url,
-                "timestamp": timestamp,
-                "total_results": len(result_data),
-                "results": [
-                    {
-                        "rank": idx + 1,
-                        "title": item.get("title") or item.get("tab_title", ""),
-                        "url": item.get("url"),
-                        "description": item.get("description", ""),
-                        "similarity": item.get("similarity", 0.0),
-                        "similarity_precise": f"{item.get('similarity', 0.0):.15f}",
-                    }
-                    for idx, item in enumerate(result_data)
-                ]
-            }
-            
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(output_data, f, ensure_ascii=False, indent=2)
-            
-            print(f"[API] Search results saved to: {output_file}")
-            if result_data:
-                print(f"[API] Total results: {len(result_data)}, similarity range: "
-                      f"min={min(r.get('similarity', 0.0) for r in result_data):.10f}, "
-                      f"max={max(r.get('similarity', 0.0) for r in result_data):.10f}")
-        except Exception as save_error:
-            print(f"[API] Failed to save search results: {save_error}")
+        # 打印相似度范围（用于调试）
+        if results:
+            similarities = [r.get("similarity", 0.0) for r in results]
+            print(f"[API] Similarity range: min={min(similarities):.6f}, max={max(similarities):.6f}")
         
-        return {"ok": True, "data": result_data}
+        # 4. 返回 JSON 响应
+        return {
+            "ok": True,
+            "results": results
+        }
     except Exception as e:
         print(f"[API] Error searching: {e}")
         import traceback
