@@ -317,30 +317,39 @@ async def generate_embeddings(request: EmbeddingRequest):
             # 存储到数据库（如果配置了）
             if db_host:
                 try:
-                    from vector_db import upsert_opengraph_item
-                    stored_count = 0
+                    from vector_db import batch_upsert_items
+                    
+                    # 准备批量存储的数据
+                    items_to_store = []
                     for item in processed_items:
+                        # 只存储有 embedding 的项
                         if item.get("text_embedding") or item.get("image_embedding"):
-                            success = await upsert_opengraph_item(
-                                url=item.get("url"),
-                                title=item.get("title"),
-                                description=item.get("description"),
-                                image=item.get("image"),
-                                site_name=item.get("site_name"),
-                                tab_id=item.get("tab_id"),
-                                tab_title=item.get("tab_title"),
-                                text_embedding=item.get("text_embedding"),
-                                image_embedding=item.get("image_embedding"),
-                                metadata={
+                            items_to_store.append({
+                                "url": item.get("url"),
+                                "title": item.get("title"),
+                                "description": item.get("description"),
+                                "image": item.get("image"),
+                                "site_name": item.get("site_name"),
+                                "tab_id": item.get("tab_id"),
+                                "tab_title": item.get("tab_title"),
+                                "text_embedding": item.get("text_embedding"),
+                                "image_embedding": item.get("image_embedding"),
+                                "metadata": {
                                     "is_screenshot": item.get("is_screenshot", False),
                                     "is_doc_card": item.get("is_doc_card", False),
                                     "success": item.get("success", False),
                                 }
-                            )
-                            if success:
-                                stored_count += 1
-                    if stored_count > 0:
-                        print(f"[API] ✓ Stored {stored_count} items to vector DB")
+                            })
+                    
+                    # 批量存储到数据库
+                    if items_to_store:
+                        stored_count = await batch_upsert_items(items_to_store)
+                        if stored_count > 0:
+                            print(f"[API] ✓ Stored {stored_count}/{len(items_to_store)} items to vector DB")
+                        else:
+                            print(f"[API] ⚠ Failed to store items to vector DB (stored_count=0)")
+                    else:
+                        print(f"[API] ⚠ No items with embeddings to store")
                 except Exception as e:
                     print(f"[API] ⚠ Failed to store embeddings to DB: {e}")
                     import traceback
