@@ -8,7 +8,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
 import os
-from opengraph import fetch_multiple_opengraph
+# ✅ 已移除：不再从后端抓取 OpenGraph，只接收客户端数据
+# from opengraph import fetch_multiple_opengraph
 from ai_insight import analyze_opengraph_data
 from search import process_opengraph_for_search
 from clustering import create_manual_cluster, classify_by_labels, discover_clusters
