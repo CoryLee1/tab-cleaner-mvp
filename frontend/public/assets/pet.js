@@ -139,25 +139,38 @@
   
   /**
    * 监听存储变化，同步宠物状态到所有标签页
+   * ✅ v2.3: 确保监听器只设置一次，避免重复监听
    */
   function setupStorageSync() {
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.onChanged) {
+      console.warn('[Tab Cleaner Pet] chrome.storage.onChanged not available');
       return;
     }
+    
+    // ✅ v2.3: 避免重复设置监听器
+    if (window.__TAB_CLEANER_PET_STORAGE_SYNC_SETUP) {
+      console.log('[Tab Cleaner Pet] Storage sync listener already setup');
+      return;
+    }
+    window.__TAB_CLEANER_PET_STORAGE_SYNC_SETUP = true;
     
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== 'local') return;
       
       if (changes.petVisible) {
         const newVisible = changes.petVisible.newValue === true;
-        console.log('[Tab Cleaner Pet] Pet visibility changed via storage:', newVisible);
+        console.log('[Tab Cleaner Pet] Pet visibility changed via storage:', newVisible, {
+          currentIsVisible: isPetVisible,
+          containerExists: !!petContainer
+        });
         
-        if (newVisible !== isPetVisible) {
-          if (newVisible) {
-            showPet();
-          } else {
-            hidePet();
-          }
+        // ✅ v2.3: 无论当前状态如何，都执行显示/隐藏操作（确保同步）
+        if (newVisible) {
+          console.log('[Tab Cleaner Pet] Storage says visible=true, calling showPet()...');
+          showPet();
+        } else {
+          console.log('[Tab Cleaner Pet] Storage says visible=false, calling hidePet()...');
+          hidePet();
         }
       }
       
@@ -166,6 +179,7 @@
         if (newPosition && newPosition.left && newPosition.top) {
           petContainer.style.left = newPosition.left;
           petContainer.style.top = newPosition.top;
+          console.log('[Tab Cleaner Pet] Position updated from storage:', newPosition);
         }
       }
     });
@@ -859,8 +873,11 @@
   // 显示宠物（简化版本：直接创建并显示，初始化在后台进行）
   async function showPet() {
     try {
+      console.log("[Tab Cleaner Pet] showPet() called, petContainer:", !!petContainer);
+      
       // ✅ 简化：如果容器不存在，直接创建（不等待初始化完成）
       if (!petContainer) {
+        console.log("[Tab Cleaner Pet] Container not found, creating...");
         await createPet();
       }
       
@@ -879,17 +896,37 @@
                 choiceOverlay.classList.remove('visible');
               }
             }
-            console.log("[Tab Cleaner Pet] Pet shown successfully");
+            console.log("[Tab Cleaner Pet] Pet shown successfully", {
+              containerExists: !!petContainer,
+              display: petContainer.style.display,
+              isVisible: isPetVisible
+            });
             
             // ✅ 保存状态到存储（同步到所有标签页）
             savePetState();
+          } else {
+            console.warn("[Tab Cleaner Pet] petContainer became null in requestAnimationFrame");
           }
         });
       } else {
-        console.warn("[Tab Cleaner Pet] Pet container not available, initialization may still be in progress");
+        console.warn("[Tab Cleaner Pet] Pet container not available after createPet(), initialization may still be in progress");
         // ✅ 即使容器还没创建，也尝试保存状态（下次会重试）
         isPetVisible = true;
         savePetState();
+        
+        // ✅ v2.3: 如果容器创建失败，延迟重试
+        setTimeout(async () => {
+          if (!petContainer) {
+            console.log("[Tab Cleaner Pet] Retrying container creation...");
+            await createPet();
+            if (petContainer) {
+              petContainer.style.display = "block";
+              isPetVisible = true;
+              savePetState();
+              console.log("[Tab Cleaner Pet] Pet shown after retry");
+            }
+          }
+        }, 500);
       }
     } catch (err) {
       console.error("[Tab Cleaner Pet] Error in showPet:", err);
