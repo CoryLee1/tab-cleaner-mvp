@@ -40,18 +40,22 @@
         // 如果应该显示，立即显示（但需要等待容器创建）
         if (shouldBeVisible) {
           // 延迟一下确保页面已加载
+          const showAndRestorePosition = async () => {
+            await showPet();
+            // ✅ 恢复位置（在容器创建后）
+            if (result.petPosition && petContainer) {
+              petContainer.style.left = result.petPosition.left;
+              petContainer.style.top = result.petPosition.top;
+              console.log('[Tab Cleaner Pet] Position restored:', result.petPosition);
+            }
+          };
+          
           if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
-              setTimeout(() => showPet(), 100);
+              setTimeout(() => showAndRestorePosition(), 100);
             }, { once: true });
           } else {
-            setTimeout(() => showPet(), 100);
-          }
-          
-          // 恢复位置
-          if (result.petPosition && petContainer) {
-            petContainer.style.left = result.petPosition.left;
-            petContainer.style.top = result.petPosition.top;
+            setTimeout(() => showAndRestorePosition(), 100);
           }
         }
       }
