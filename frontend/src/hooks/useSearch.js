@@ -162,7 +162,7 @@ export const useSearch = (opengraphData = []) => {
         finalList = result.data;
       } else {
         console.warn('[useSearch] Backend returned empty, using local fuzzy ranking');
-        finalList = fuzzyRankLocally(query, currentOGData);
+        finalList = fuzzyRankLocally(query, currentOGData || []);
       }
       
       // 按相似度排序
