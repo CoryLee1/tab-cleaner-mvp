@@ -41,29 +41,20 @@
     (document.head || document.documentElement).appendChild(script);
   })();
 
-  // ✅ 优化：加载 pet 模块并同步状态（改进版本，确保所有页面都能自动加载）
+  // ✅ v2.2: 页面加载时立即加载 pet 模块（不等待 petVisible 状态）
+  // 按钮只控制显示/隐藏，不控制加载
   (function loadPetModule() {
-    // ✅ 首先检查存储状态，如果应该显示宠物，自动加载 pet.js
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['petVisible'], (items) => {
-        const shouldLoadPet = items.petVisible === true;
-        
-        if (shouldLoadPet) {
-          console.log("[Tab Cleaner] Pet should be visible, loading pet module...");
-          // 如果 pet.js 还没加载，先加载它
-          if (!window.__TAB_CLEANER_PET) {
-            loadPetScript();
-          } else {
-            // 如果已经加载，直接显示
-            syncPetState();
-          }
-        } else {
-          console.log("[Tab Cleaner] Pet should be hidden, skipping pet module load");
-        }
-      });
+    // ✅ 立即加载 pet.js，不管 petVisible 状态
+    if (!window.__TAB_CLEANER_PET) {
+      console.log("[Tab Cleaner] Loading pet module on page load...");
+      loadPetScript();
+    } else {
+      console.log("[Tab Cleaner] Pet module already loaded, syncing state...");
+      // 如果已经加载，立即同步状态
+      syncPetState();
     }
     
-    // ✅ 监听存储变化，当 petVisible 状态改变时自动加载/显示/隐藏宠物
+    // ✅ 监听存储变化，当 petVisible 状态改变时只控制显示/隐藏（不重新加载）
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((changes, areaName) => {
         if (areaName !== 'local') return;
@@ -72,19 +63,20 @@
           const newVisible = changes.petVisible.newValue === true;
           console.log("[Tab Cleaner] Pet visibility changed via storage:", newVisible);
           
-          if (newVisible) {
-            // 应该显示宠物
-            if (!window.__TAB_CLEANER_PET) {
-              console.log("[Tab Cleaner] Loading pet module due to visibility change...");
-              loadPetScript();
-            } else {
+          if (window.__TAB_CLEANER_PET) {
+            // 模块已加载，直接显示/隐藏
+            if (newVisible) {
               syncPetState();
+            } else {
+              // 应该隐藏宠物
+              if (window.__TAB_CLEANER_PET.hide) {
+                window.__TAB_CLEANER_PET.hide();
+              }
             }
           } else {
-            // 应该隐藏宠物
-            if (window.__TAB_CLEANER_PET && window.__TAB_CLEANER_PET.hide) {
-              window.__TAB_CLEANER_PET.hide();
-            }
+            // 如果模块还没加载（可能加载失败），尝试加载
+            console.log("[Tab Cleaner] Pet module not loaded, loading now...");
+            loadPetScript();
           }
         }
       });

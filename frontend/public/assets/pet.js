@@ -20,6 +20,7 @@
   
   /**
    * 从 Chrome Storage 加载宠物状态
+   * ✅ v2.2: 模块加载时立即检查状态并显示/隐藏（不等待用户操作）
    */
   async function loadPetState() {
     if (petStateLoaded) return;
@@ -40,7 +41,7 @@
           petPosition: result.petPosition
         });
         
-        // 如果应该显示，立即显示（但需要等待容器创建）
+        // ✅ v2.2: 根据存储状态立即显示或隐藏（模块已加载，响应更快）
         if (shouldBeVisible) {
           // 延迟一下确保页面已加载
           const showAndRestorePosition = async () => {
@@ -59,6 +60,18 @@
             }, { once: true });
           } else {
             setTimeout(() => showAndRestorePosition(), 100);
+          }
+        } else {
+          // ✅ v2.2: 如果应该隐藏，确保容器已创建但隐藏（为后续显示做准备）
+          console.log('[Tab Cleaner Pet] Pet should be hidden, ensuring container is ready but hidden');
+          if (!petContainer) {
+            // 创建容器但不显示（为后续快速显示做准备）
+            await createPet();
+          }
+          // 确保是隐藏状态
+          if (petContainer) {
+            petContainer.style.display = "none";
+            isPetVisible = false;
           }
         }
       }
