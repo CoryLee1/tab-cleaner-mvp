@@ -300,12 +300,14 @@
   }
 
   // 确保函数被正确暴露（使用 try-catch 包裹，确保即使出错也能暴露函数）
+  console.log('[OpenGraph Local] About to expose function...');
   try {
     /**
      * 暴露全局函数供外部调用
      * 可以等待页面加载完成后再提取（对于动态内容）
      */
-    window.__TAB_CLEANER_GET_OPENGRAPH = function(waitForLoad = false) {
+    const openGraphFunction = function(waitForLoad = false) {
+      console.log('[OpenGraph Local] Function called with waitForLoad:', waitForLoad);
       // 如果不需要等待，直接返回结果
       if (!waitForLoad) {
         return extractOpenGraphLocal();
@@ -333,22 +335,57 @@
       });
     };
     
+    // 尝试多种方式暴露函数
+    try {
+      window.__TAB_CLEANER_GET_OPENGRAPH = openGraphFunction;
+      console.log('[OpenGraph Local] ✅ Function assigned to window.__TAB_CLEANER_GET_OPENGRAPH');
+    } catch (e1) {
+      console.error('[OpenGraph Local] Failed to assign to window:', e1);
+      // 尝试直接设置
+      try {
+        Object.defineProperty(window, '__TAB_CLEANER_GET_OPENGRAPH', {
+          value: openGraphFunction,
+          writable: true,
+          configurable: true
+        });
+        console.log('[OpenGraph Local] ✅ Function assigned via defineProperty');
+      } catch (e2) {
+        console.error('[OpenGraph Local] Failed to assign via defineProperty:', e2);
+        throw e2;
+      }
+    }
+    
     console.log('[OpenGraph Local] ✅ Loaded and ready');
     console.log('[OpenGraph Local] Function available:', typeof window.__TAB_CLEANER_GET_OPENGRAPH);
     console.log('[OpenGraph Local] Function is function?', typeof window.__TAB_CLEANER_GET_OPENGRAPH === 'function');
+    console.log('[OpenGraph Local] Function value:', window.__TAB_CLEANER_GET_OPENGRAPH);
+    
+    // 验证函数是否真的可用
+    if (typeof window.__TAB_CLEANER_GET_OPENGRAPH !== 'function') {
+      throw new Error('Function was not properly assigned');
+    }
   } catch (error) {
     console.error('[OpenGraph Local] ❌ Failed to expose function:', error);
+    console.error('[OpenGraph Local] Error name:', error.name);
+    console.error('[OpenGraph Local] Error message:', error.message);
     console.error('[OpenGraph Local] Error stack:', error.stack);
     // 即使出错，也尝试暴露一个基础函数
-    window.__TAB_CLEANER_GET_OPENGRAPH = function() {
-      return {
-        url: window.location.href,
-        title: document.title || window.location.href,
-        success: false,
-        error: 'OpenGraph function initialization failed: ' + error.message,
-        is_doc_card: false,
+    try {
+      window.__TAB_CLEANER_GET_OPENGRAPH = function() {
+        return {
+          url: window.location.href,
+          title: document.title || window.location.href,
+          success: false,
+          error: 'OpenGraph function initialization failed: ' + error.message,
+          is_doc_card: false,
+        };
       };
-    };
-    console.log('[OpenGraph Local] ⚠️ Fallback function exposed');
+      console.log('[OpenGraph Local] ⚠️ Fallback function exposed');
+    } catch (fallbackError) {
+      console.error('[OpenGraph Local] ❌ Even fallback function failed:', fallbackError);
+    }
   }
+  
+  console.log('[OpenGraph Local] Script execution completed');
+  console.log('[OpenGraph Local] Final check - Function available:', typeof window.__TAB_CLEANER_GET_OPENGRAPH);
 })();
