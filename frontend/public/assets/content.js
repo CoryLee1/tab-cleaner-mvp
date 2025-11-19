@@ -106,9 +106,9 @@
           waitAttempts++;
           
           if (window.__TAB_CLEANER_PET && typeof window.__TAB_CLEANER_PET.show === 'function') {
-            // ✅ API 已可用，直接同步状态（pet.js 自己处理初始化）
-            console.log("[Tab Cleaner] ✅ Pet API available, syncing state...");
-            syncPetState();
+            // ✅ v2.2: API 已可用，pet.js 的 loadPetState() 会自动处理显示/隐藏
+            console.log("[Tab Cleaner] ✅ Pet API available, module will auto-sync state...");
+            // 不需要手动调用 syncPetState()，pet.js 已经处理了
           } else if (waitAttempts < maxWaitAttempts) {
             // API 还没加载完成，继续等待
             setTimeout(waitForPetAPI, 100);
