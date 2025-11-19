@@ -641,7 +641,9 @@ async def fetch_multiple_opengraph(urls: List[str]) -> List[Dict]:
                 "image": "",
                 "site_name": "",
                 "success": False,
-                "error": str(result)
+                "error": str(result),
+                "is_screenshot": False,
+                "needs_screenshot": False,
             })
         else:
             processed_results.append(result)
