@@ -511,6 +511,78 @@
 
   function toggleCard() { isVisible ? hideCard() : showCard(); }
 
+  // 监听来自页面上下文的 postMessage（opengraph_local.js 发送）
+  window.addEventListener('message', (event) => {
+    // 安全检查：只处理来自同源的消息
+    if (event.data && event.data.type === 'TAB_CLEANER_CACHE_OPENGRAPH') {
+      console.log('[Tab Cleaner Content] 📥 Received cache-opengraph via postMessage:', {
+        url: event.data.data?.url,
+        success: event.data.data?.success,
+        hasImage: !!(event.data.data?.image),
+        image: event.data.data?.image ? event.data.data.image.substring(0, 60) + '...' : null
+      });
+      
+      if (event.data.data && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        try {
+          const cacheData = event.data.data;
+          const storageKey = `opengraph_cache_${cacheData.url}`;
+          
+          // 确保图片链接被保存
+          if (!cacheData.image && event.data.data.image) {
+            cacheData.image = event.data.data.image;
+            console.log('[Tab Cleaner Content] ✅ Restored image URL in cache:', cacheData.image.substring(0, 60) + '...');
+          }
+          
+          // 保存到独立缓存键
+          chrome.storage.local.set({
+            [storageKey]: cacheData
+          }, () => {
+            if (chrome.runtime.lastError) {
+              console.error('[Tab Cleaner Content] ❌ Failed to cache data:', chrome.runtime.lastError);
+            } else {
+              console.log('[Tab Cleaner Content] ✅ Data cached locally:', storageKey);
+              
+              // 同时保存到最近提取的列表
+              chrome.storage.local.get(['recent_opengraph'], (items) => {
+                if (chrome.runtime.lastError) {
+                  console.error('[Tab Cleaner Content] ❌ Failed to get recent_opengraph:', chrome.runtime.lastError);
+                  return;
+                }
+                
+                const recent = items.recent_opengraph || [];
+                const filtered = recent.filter(item => item && item.url !== cacheData.url);
+                filtered.unshift(cacheData);
+                const limited = filtered.slice(0, 100);
+                
+                console.log('[Tab Cleaner Content] 💾 Saving recent_opengraph:', {
+                  before: recent.length,
+                  after: limited.length,
+                  firstItem: limited[0] ? {
+                    url: limited[0].url,
+                    hasImage: !!(limited[0].image),
+                    image: limited[0].image ? limited[0].image.substring(0, 60) + '...' : null
+                  } : null
+                });
+                
+                chrome.storage.local.set({ recent_opengraph: limited }, () => {
+                  if (chrome.runtime.lastError) {
+                    console.error('[Tab Cleaner Content] ❌ Failed to save recent_opengraph:', chrome.runtime.lastError);
+                  } else {
+                    console.log('[Tab Cleaner Content] ✅ Added to recent_opengraph list (total:', limited.length, ')');
+                  }
+                });
+              });
+            }
+          });
+        } catch (storageError) {
+          console.error('[Tab Cleaner Content] ❌ Storage error:', storageError);
+        }
+      } else {
+        console.warn('[Tab Cleaner Content] ⚠️ chrome.storage.local not available in content script');
+      }
+    }
+  });
+
   chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     if (!req || !req.action) return false;
     if (req.action === "toggle" || req.action === "toggleCard") { toggleCard(); sendResponse?.({ ok: true }); return true; }

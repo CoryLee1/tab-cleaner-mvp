@@ -206,41 +206,38 @@
 
     // 12. 无论成功与否，都保存到本地存储（作为后备）
     // 注意：opengraph_local.js 运行在页面上下文中，无法直接访问 chrome.storage
-    // 需要通过 chrome.runtime.sendMessage 发送消息到 content script 或 background script 来保存
-    console.log('[OpenGraph Local] 💾 Requesting cache save via message...', {
+    // 使用 window.postMessage 与 content script 通信，content script 再保存到 chrome.storage
+    console.log('[OpenGraph Local] 💾 Requesting cache save via postMessage...', {
       url: result.url,
       success: result.success,
       hasTitle: !!(result.title),
-      hasImage: !!(result.image)
+      hasImage: !!(result.image),
+      image: result.image ? result.image.substring(0, 60) + '...' : null // 确保图片链接被记录
     });
     
-    // 通过消息传递请求保存（content script 或 background script 会处理）
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      try {
-        const cacheData = {
-          ...result,
-          timestamp: Date.now(),
-          cached: true
-        };
-        
-        chrome.runtime.sendMessage({
-          action: 'cache-opengraph',
-          data: cacheData
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.warn('[OpenGraph Local] ⚠️ Failed to send cache message:', chrome.runtime.lastError.message);
-          } else {
-            console.log('[OpenGraph Local] ✅ Cache save requested:', {
-              success: response?.success,
-              message: response?.message
-            });
-          }
-        });
-      } catch (messageError) {
-        console.warn('[OpenGraph Local] ⚠️ Failed to send cache message:', messageError);
+    // 通过 window.postMessage 发送到 content script（content script 会监听并保存）
+    try {
+      const cacheData = {
+        ...result,
+        timestamp: Date.now(),
+        cached: true
+      };
+      
+      // 确保图片链接被包含
+      if (!cacheData.image && result.image) {
+        cacheData.image = result.image;
+        console.log('[OpenGraph Local] ✅ Restored image URL:', cacheData.image.substring(0, 60) + '...');
       }
-    } else {
-      console.warn('[OpenGraph Local] ⚠️ chrome.runtime.sendMessage not available');
+      
+      // 发送到 content script
+      window.postMessage({
+        type: 'TAB_CLEANER_CACHE_OPENGRAPH',
+        data: cacheData
+      }, '*');
+      
+      console.log('[OpenGraph Local] ✅ Cache save message posted to window');
+    } catch (messageError) {
+      console.warn('[OpenGraph Local] ⚠️ Failed to post cache message:', messageError);
     }
 
     return result;
