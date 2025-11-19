@@ -58,14 +58,13 @@ export async function generateEmbeddings(opengraphItems) {
   return data;
 }
 
-export async function searchContent(queryText, queryImageUrl, opengraphItems) {
+export async function searchContent(query, topK = 20) {
   const resp = await fetch(API + "/search/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      query_text: queryText || null,
-      query_image_url: queryImageUrl || null,
-      opengraph_items: opengraphItems
+      query: query,
+      top_k: topK
     })
   });
   if (!resp.ok) {
