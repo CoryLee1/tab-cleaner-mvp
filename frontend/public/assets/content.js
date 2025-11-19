@@ -45,10 +45,7 @@
   // 状态同步全部交给 pet.js 自己通过 chrome.storage 处理
   // 注意：content script 无法访问页面环境中的 window.__TAB_CLEANER_PET
   (function injectPetModule() {
-    // 避免重复注入（使用页面环境中的标志）
-    const injectedFlag = '__TAB_CLEANER_PET_SCRIPT_INJECTED';
-    
-    // 检查是否已经注入（通过检查页面中是否有 script 标签）
+    // 避免重复注入（通过检查页面中是否有 script 标签）
     const existingScript = document.querySelector(`script[src*="pet.js"]`);
     if (existingScript) {
       console.log('[Tab Cleaner] pet.js already injected, skipping');
@@ -60,9 +57,12 @@
       script.src = chrome.runtime.getURL('assets/pet.js');
       script.onload = () => {
         console.log('[Tab Cleaner] pet.js injected into page');
-        // 注意：这里不要去访问 window.__TAB_CLEANER_PET，
+        // ✅ v2.3: 注意：这里不要去访问 window.__TAB_CLEANER_PET，
         // 因为 content script 看不到页面环境里的那个对象
-        // pet.js 自己会处理初始化和 storage 监听
+        // pet.js 自己会处理：
+        //   1. 从 chrome.storage.local 读取 petVisible 初始状态
+        //   2. 监听 chrome.storage.onChanged 同步显示/隐藏
+        //   3. 所有 DOM 操作都在页面环境中完成
       };
       script.onerror = (e) => {
         console.error('[Tab Cleaner] Failed to inject pet.js:', e);
