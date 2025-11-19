@@ -41,15 +41,119 @@
     (document.head || document.documentElement).appendChild(script);
   })();
 
-  // ✅ 优化：加载 pet 模块（改进版本，等待初始化完成并同步状态）
+  // ✅ 优化：加载 pet 模块并同步状态（改进版本，确保所有页面都能自动加载）
   (function loadPetModule() {
-    if (window.__TAB_CLEANER_PET) {
-      console.log("[Tab Cleaner] Pet module already loaded");
-      // ✅ 即使模块已加载，也要检查存储状态并同步显示
+    // ✅ 首先检查存储状态，如果应该显示宠物，自动加载 pet.js
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['petVisible'], (items) => {
+        const shouldLoadPet = items.petVisible === true;
+        
+        if (shouldLoadPet) {
+          console.log("[Tab Cleaner] Pet should be visible, loading pet module...");
+          // 如果 pet.js 还没加载，先加载它
+          if (!window.__TAB_CLEANER_PET) {
+            loadPetScript();
+          } else {
+            // 如果已经加载，直接显示
+            syncPetState();
+          }
+        } else {
+          console.log("[Tab Cleaner] Pet should be hidden, skipping pet module load");
+        }
+      });
+    }
+    
+    // ✅ 监听存储变化，当 petVisible 状态改变时自动加载/显示/隐藏宠物
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        
+        if (changes.petVisible) {
+          const newVisible = changes.petVisible.newValue === true;
+          console.log("[Tab Cleaner] Pet visibility changed via storage:", newVisible);
+          
+          if (newVisible) {
+            // 应该显示宠物
+            if (!window.__TAB_CLEANER_PET) {
+              console.log("[Tab Cleaner] Loading pet module due to visibility change...");
+              loadPetScript();
+            } else {
+              syncPetState();
+            }
+          } else {
+            // 应该隐藏宠物
+            if (window.__TAB_CLEANER_PET && window.__TAB_CLEANER_PET.hide) {
+              window.__TAB_CLEANER_PET.hide();
+            }
+          }
+        }
+      });
+    }
+    
+    /**
+     * 加载 pet.js 脚本
+     */
+    function loadPetScript() {
+      if (window.__TAB_CLEANER_PET) {
+        console.log("[Tab Cleaner] Pet module already loaded");
+        syncPetState();
+        return;
+      }
+      
+      console.log("[Tab Cleaner] Loading pet module...");
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('assets/pet.js');
+      script.onload = () => {
+        console.log("[Tab Cleaner] Pet script loaded, checking module:", window.__TAB_CLEANER_PET);
+        
+        // ✅ 等待 pet 模块完全初始化
+        let waitAttempts = 0;
+        const maxWaitAttempts = 50; // 最多等待 50 次 × 100ms = 5 秒
+        
+        const waitForPetInit = () => {
+          waitAttempts++;
+          
+          if (window.__TAB_CLEANER_PET && 
+              typeof window.__TAB_CLEANER_PET.ensureInitialized === 'function') {
+            // ✅ 等待初始化完成
+            window.__TAB_CLEANER_PET.ensureInitialized().then((initialized) => {
+              if (initialized) {
+                console.log("[Tab Cleaner] ✅ Pet module fully initialized");
+                syncPetState();
+              } else {
+                console.warn("[Tab Cleaner] ⚠️ Pet module initialization failed");
+              }
+            });
+          } else if (waitAttempts < maxWaitAttempts) {
+            // 模块还没加载完成，继续等待
+            setTimeout(waitForPetInit, 100);
+          } else {
+            console.warn("[Tab Cleaner] ⚠️ Pet module initialization timeout");
+          }
+        };
+        
+        // 开始等待
+        setTimeout(waitForPetInit, 100);
+      };
+      script.onerror = (e) => {
+        console.error("[Tab Cleaner] Failed to load pet.js:", e);
+      };
+      (document.head || document.documentElement).appendChild(script);
+    }
+    
+    /**
+     * 同步宠物状态（显示宠物并恢复位置）
+     */
+    function syncPetState() {
+      if (!window.__TAB_CLEANER_PET) {
+        console.warn("[Tab Cleaner] Pet module not available for sync");
+        return;
+      }
+      
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(['petVisible', 'petPosition'], (items) => {
           if (items.petVisible === true && window.__TAB_CLEANER_PET) {
-            console.log("[Tab Cleaner] Pet should be visible, showing...");
+            console.log("[Tab Cleaner] Syncing pet state: showing pet...");
             // ✅ 等待初始化完成后再显示
             if (window.__TAB_CLEANER_PET.ensureInitialized) {
               window.__TAB_CLEANER_PET.ensureInitialized().then((initialized) => {
@@ -59,11 +163,14 @@
                     window.__TAB_CLEANER_PET.show();
                     // 恢复位置
                     if (items.petPosition) {
-                      const container = document.getElementById('tab-cleaner-pet-container');
-                      if (container && items.petPosition.left && items.petPosition.top) {
-                        container.style.left = items.petPosition.left;
-                        container.style.top = items.petPosition.top;
-                      }
+                      setTimeout(() => {
+                        const container = document.getElementById('tab-cleaner-pet-container');
+                        if (container && items.petPosition.left && items.petPosition.top) {
+                          container.style.left = items.petPosition.left;
+                          container.style.top = items.petPosition.top;
+                          console.log("[Tab Cleaner] Pet position restored:", items.petPosition);
+                        }
+                      }, 200);
                     }
                   }, 100);
                 }
@@ -79,71 +186,7 @@
           }
         });
       }
-      return; // 已经加载
     }
-    console.log("[Tab Cleaner] Loading pet module...");
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('assets/pet.js');
-    script.onload = () => {
-      console.log("[Tab Cleaner] Pet script loaded, checking module:", window.__TAB_CLEANER_PET);
-      
-      // ✅ 等待 pet 模块完全初始化
-      let waitAttempts = 0;
-      const maxWaitAttempts = 50; // 最多等待 50 次 × 100ms = 5 秒
-      
-      const waitForPetInit = () => {
-        waitAttempts++;
-        
-        if (window.__TAB_CLEANER_PET && 
-            typeof window.__TAB_CLEANER_PET.ensureInitialized === 'function') {
-          // ✅ 等待初始化完成
-          window.__TAB_CLEANER_PET.ensureInitialized().then((initialized) => {
-            if (initialized) {
-              console.log("[Tab Cleaner] ✅ Pet module fully initialized");
-              
-              // ✅ 检查存储状态并同步显示
-              if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                chrome.storage.local.get(['petVisible', 'petPosition'], (items) => {
-                  if (items.petVisible === true && window.__TAB_CLEANER_PET) {
-                    console.log("[Tab Cleaner] Pet should be visible, showing...");
-                    setTimeout(() => {
-                      if (window.__TAB_CLEANER_PET && window.__TAB_CLEANER_PET.show) {
-                        window.__TAB_CLEANER_PET.show();
-                        // 恢复位置
-                        if (items.petPosition) {
-                          setTimeout(() => {
-                            const container = document.getElementById('tab-cleaner-pet-container');
-                            if (container && items.petPosition.left && items.petPosition.top) {
-                              container.style.left = items.petPosition.left;
-                              container.style.top = items.petPosition.top;
-                              console.log("[Tab Cleaner] Pet position restored:", items.petPosition);
-                            }
-                          }, 200);
-                        }
-                      }
-                    }, 100);
-                  }
-                });
-              }
-            } else {
-              console.warn("[Tab Cleaner] ⚠️ Pet module initialization failed");
-            }
-          });
-        } else if (waitAttempts < maxWaitAttempts) {
-          // 模块还没加载完成，继续等待
-          setTimeout(waitForPetInit, 100);
-        } else {
-          console.warn("[Tab Cleaner] ⚠️ Pet module initialization timeout");
-        }
-      };
-      
-      // 开始等待
-      setTimeout(waitForPetInit, 100);
-    };
-    script.onerror = (e) => {
-      console.error("[Tab Cleaner] Failed to load pet.js:", e);
-    };
-    (document.head || document.documentElement).appendChild(script);
   })();
 
   let cardContainer = null;
