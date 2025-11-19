@@ -205,117 +205,42 @@
     }
 
     // 12. 无论成功与否，都保存到本地存储（作为后备）
-    // 移到 try-catch 外面，确保即使提取出错也会保存
-    // 这样即使消息传递失败，background.js 也能从缓存读取
-    console.log('[OpenGraph Local] 🔍 Checking chrome.storage availability...', {
-      hasChrome: typeof chrome !== 'undefined',
-      hasStorage: typeof chrome !== 'undefined' && chrome.storage,
-      hasLocal: typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local
+    // 注意：opengraph_local.js 运行在页面上下文中，无法直接访问 chrome.storage
+    // 需要通过 chrome.runtime.sendMessage 发送消息到 content script 或 background script 来保存
+    console.log('[OpenGraph Local] 💾 Requesting cache save via message...', {
+      url: result.url,
+      success: result.success,
+      hasTitle: !!(result.title),
+      hasImage: !!(result.image)
     });
     
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    // 通过消息传递请求保存（content script 或 background script 会处理）
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
       try {
-        const storageKey = `opengraph_cache_${result.url}`;
         const cacheData = {
           ...result,
           timestamp: Date.now(),
           cached: true
         };
         
-        console.log('[OpenGraph Local] 💾 Attempting to cache data:', {
-          url: result.url,
-          success: result.success,
-          hasTitle: !!(result.title),
-          hasImage: !!(result.image),
-          storageKey: storageKey,
-          cacheDataKeys: Object.keys(cacheData)
-        });
-        
-        // 保存到独立缓存键
-        chrome.storage.local.set({
-          [storageKey]: cacheData
-        }, () => {
+        chrome.runtime.sendMessage({
+          action: 'cache-opengraph',
+          data: cacheData
+        }, (response) => {
           if (chrome.runtime.lastError) {
-            console.error('[OpenGraph Local] ❌ Failed to cache data:', chrome.runtime.lastError);
+            console.warn('[OpenGraph Local] ⚠️ Failed to send cache message:', chrome.runtime.lastError.message);
           } else {
-            console.log('[OpenGraph Local] ✅ Data cached locally:', storageKey);
-            
-            // 验证是否真的保存了
-            chrome.storage.local.get([storageKey], (verifyItems) => {
-              if (verifyItems[storageKey]) {
-                console.log('[OpenGraph Local] ✅ Verified cache saved:', {
-                  url: verifyItems[storageKey].url,
-                  success: verifyItems[storageKey].success
-                });
-              } else {
-                console.error('[OpenGraph Local] ❌ Cache verification failed - data not found!');
-              }
+            console.log('[OpenGraph Local] ✅ Cache save requested:', {
+              success: response?.success,
+              message: response?.message
             });
           }
         });
-        
-        // 同时保存到最近提取的列表（用于 personal space 读取）
-        // 即使 success 为 false，也保存（可能有一些数据）
-        chrome.storage.local.get(['recent_opengraph'], (items) => {
-          if (chrome.runtime.lastError) {
-            console.error('[OpenGraph Local] ❌ Failed to get recent_opengraph:', chrome.runtime.lastError);
-            return;
-          }
-          
-          const recent = items.recent_opengraph || [];
-          console.log('[OpenGraph Local] 📋 Current recent_opengraph count:', recent.length);
-          
-          // 移除相同 URL 的旧记录
-          const filtered = recent.filter(item => item && item.url !== result.url);
-          // 添加到顶部
-          filtered.unshift(cacheData);
-          // 只保留最近 100 条
-          const limited = filtered.slice(0, 100);
-          
-          console.log('[OpenGraph Local] 💾 Saving recent_opengraph:', {
-            before: recent.length,
-            after: limited.length,
-            newItem: {
-              url: cacheData.url,
-              success: cacheData.success,
-              hasTitle: !!(cacheData.title),
-              hasImage: !!(cacheData.image)
-            }
-          });
-          
-          chrome.storage.local.set({ recent_opengraph: limited }, () => {
-            if (chrome.runtime.lastError) {
-              console.error('[OpenGraph Local] ❌ Failed to save recent_opengraph:', chrome.runtime.lastError);
-            } else {
-              console.log('[OpenGraph Local] ✅ Added to recent_opengraph list (success:', result.success, ', total:', limited.length, ')');
-              
-              // 验证是否真的保存了
-              chrome.storage.local.get(['recent_opengraph'], (verifyItems) => {
-                if (verifyItems.recent_opengraph) {
-                  console.log('[OpenGraph Local] ✅ Verified recent_opengraph saved:', {
-                    count: verifyItems.recent_opengraph.length,
-                    firstItem: verifyItems.recent_opengraph[0] ? {
-                      url: verifyItems.recent_opengraph[0].url,
-                      success: verifyItems.recent_opengraph[0].success
-                    } : null
-                  });
-                } else {
-                  console.error('[OpenGraph Local] ❌ recent_opengraph verification failed - data not found!');
-                }
-              });
-            }
-          });
-        });
-      } catch (storageError) {
-        console.error('[OpenGraph Local] ❌ Storage error:', storageError);
-        console.error('[OpenGraph Local] ❌ Storage error stack:', storageError.stack);
+      } catch (messageError) {
+        console.warn('[OpenGraph Local] ⚠️ Failed to send cache message:', messageError);
       }
     } else {
-      console.warn('[OpenGraph Local] ⚠️ chrome.storage.local not available', {
-        hasChrome: typeof chrome !== 'undefined',
-        hasStorage: typeof chrome !== 'undefined' && chrome.storage,
-        hasLocal: typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local
-      });
+      console.warn('[OpenGraph Local] ⚠️ chrome.runtime.sendMessage not available');
     }
 
     return result;
