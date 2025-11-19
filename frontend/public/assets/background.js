@@ -418,6 +418,8 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
                   // 确保有 URL 和 title
                   url: localOG.url || tab.url,
                   title: localOG.title || tab.title || tab.url,
+                  // 确保 is_doc_card 被正确设置（如果未设置，默认为 false）
+                  is_doc_card: localOG.is_doc_card || false,
                 };
               }
               
@@ -429,6 +431,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
                 tab_title: tab.title,
                 success: false,
                 error: 'Local OpenGraph fetch returned empty',
+                is_doc_card: false, // 明确设置不是 doc 卡片
                 id: `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               };
             } catch (error) {
@@ -441,6 +444,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
                 tab_title: tab.title,
                 success: false,
                 error: error.message,
+                is_doc_card: false, // 明确设置不是 doc 卡片
                 id: `og_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               };
             }
