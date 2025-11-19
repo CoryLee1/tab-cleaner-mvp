@@ -516,6 +516,65 @@
     if (req.action === "toggle" || req.action === "toggleCard") { toggleCard(); sendResponse?.({ ok: true }); return true; }
     if (req.action === "show") { showCard(); sendResponse?.({ ok: true }); return true; }
     if (req.action === "hide") { hideCard(); sendResponse?.({ ok: true }); return true; }
+    if (req.action === "cache-opengraph") {
+      // 处理来自 opengraph_local.js 的缓存请求
+      // opengraph_local.js 运行在页面上下文中，无法直接访问 chrome.storage
+      // 所以通过消息传递到 content script，由 content script 来保存
+      console.log('[Tab Cleaner Content] 📥 Received cache-opengraph request:', {
+        url: req.data?.url,
+        success: req.data?.success
+      });
+      
+      if (req.data && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        try {
+          const cacheData = req.data;
+          const storageKey = `opengraph_cache_${cacheData.url}`;
+          
+          // 保存到独立缓存键
+          chrome.storage.local.set({
+            [storageKey]: cacheData
+          }, () => {
+            if (chrome.runtime.lastError) {
+              console.error('[Tab Cleaner Content] ❌ Failed to cache data:', chrome.runtime.lastError);
+              sendResponse?.({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              console.log('[Tab Cleaner Content] ✅ Data cached locally:', storageKey);
+              
+              // 同时保存到最近提取的列表
+              chrome.storage.local.get(['recent_opengraph'], (items) => {
+                if (chrome.runtime.lastError) {
+                  console.error('[Tab Cleaner Content] ❌ Failed to get recent_opengraph:', chrome.runtime.lastError);
+                  sendResponse?.({ success: true, message: 'Cached but failed to update recent list' });
+                  return;
+                }
+                
+                const recent = items.recent_opengraph || [];
+                const filtered = recent.filter(item => item && item.url !== cacheData.url);
+                filtered.unshift(cacheData);
+                const limited = filtered.slice(0, 100);
+                
+                chrome.storage.local.set({ recent_opengraph: limited }, () => {
+                  if (chrome.runtime.lastError) {
+                    console.error('[Tab Cleaner Content] ❌ Failed to save recent_opengraph:', chrome.runtime.lastError);
+                    sendResponse?.({ success: true, message: 'Cached but failed to update recent list' });
+                  } else {
+                    console.log('[Tab Cleaner Content] ✅ Added to recent_opengraph list (total:', limited.length, ')');
+                    sendResponse?.({ success: true, message: 'Cached successfully' });
+                  }
+                });
+              });
+            }
+          });
+        } catch (storageError) {
+          console.error('[Tab Cleaner Content] ❌ Storage error:', storageError);
+          sendResponse?.({ success: false, error: storageError.message });
+        }
+      } else {
+        console.warn('[Tab Cleaner Content] ⚠️ chrome.storage.local not available in content script');
+        sendResponse?.({ success: false, error: 'chrome.storage.local not available' });
+      }
+      return true; // 保持消息通道开放
+    }
     if (req.action === "fetch-opengraph") {
       // 重要：返回 true 保持消息通道开放，以便异步发送响应
       // 处理本地 OpenGraph 抓取请求
