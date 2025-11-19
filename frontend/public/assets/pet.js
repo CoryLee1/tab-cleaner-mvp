@@ -2,11 +2,15 @@
 (function () {
   'use strict';
   
-  // ✅ 检查是否已经加载（避免重复加载）
-  if (window.__TAB_CLEANER_PET) {
+  // ✅ v2.3: 检查是否已经加载（避免重复加载）
+  // 使用更可靠的标志检查
+  if (window.__TAB_CLEANER_PET_LOADED) {
     console.log("[Tab Cleaner Pet] Module already loaded, skipping initialization");
     return;
   }
+  
+  // 设置加载标志
+  window.__TAB_CLEANER_PET_LOADED = true;
 
   let petContainer = null;
   let isPetVisible = false;
@@ -940,13 +944,13 @@
   try {
     window.__TAB_CLEANER_PET = api;
     
-    // ✅ 设置存储同步监听器
+    // ✅ v2.3: 设置存储同步监听器（必须在 API 导出后）
     setupStorageSync();
     
-    // ✅ 加载宠物状态（从存储中读取）
+    // ✅ v2.3: 加载宠物状态（从存储中读取，自动显示/隐藏）
     loadPetState();
     
-    // 触发加载完成事件，通知监听器
+    // 触发加载完成事件，通知监听器（如果有的话）
     const event = new CustomEvent('__TAB_CLEANER_PET_LOADED', {
       detail: { api: api }
     });
@@ -962,11 +966,13 @@
       hasToggle: typeof api.toggle === 'function',
       hasShow: typeof api.show === 'function',
       hasHide: typeof api.hide === 'function',
-      hasForceShow: typeof api.forceShow === 'function', // ✅ v2.1: 日志增强
+      hasForceShow: typeof api.forceShow === 'function',
       module: api
     });
   } catch (e) {
     console.error("[Tab Cleaner Pet] Failed to export API:", e);
+    // 如果导出失败，重置标志允许重试
+    window.__TAB_CLEANER_PET_LOADED = false;
   }
 })();
 

@@ -41,168 +41,36 @@
     (document.head || document.documentElement).appendChild(script);
   })();
 
-  // ✅ v2.2: 页面加载时立即加载 pet 模块（不等待 petVisible 状态）
-  // 按钮只控制显示/隐藏，不控制加载
-  (function loadPetModule() {
-    // ✅ 立即加载 pet.js，不管 petVisible 状态
-    if (!window.__TAB_CLEANER_PET) {
-      console.log("[Tab Cleaner] Loading pet module on page load...");
-      loadPetScript();
-    } else {
-      console.log("[Tab Cleaner] Pet module already loaded, syncing state...");
-      // 如果已经加载，立即同步状态
-      syncPetState();
+  // ✅ v2.3: 简化版 —— 每个页面自动注入 pet.js
+  // 状态同步全部交给 pet.js 自己通过 chrome.storage 处理
+  // 注意：content script 无法访问页面环境中的 window.__TAB_CLEANER_PET
+  (function injectPetModule() {
+    // 避免重复注入（使用页面环境中的标志）
+    const injectedFlag = '__TAB_CLEANER_PET_SCRIPT_INJECTED';
+    
+    // 检查是否已经注入（通过检查页面中是否有 script 标签）
+    const existingScript = document.querySelector(`script[src*="pet.js"]`);
+    if (existingScript) {
+      console.log('[Tab Cleaner] pet.js already injected, skipping');
+      return;
     }
     
-    // ✅ 监听存储变化，当 petVisible 状态改变时只控制显示/隐藏（不重新加载）
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-      chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName !== 'local') return;
-        
-        if (changes.petVisible) {
-          const newVisible = changes.petVisible.newValue === true;
-          console.log("[Tab Cleaner] Pet visibility changed via storage:", newVisible);
-          
-          if (window.__TAB_CLEANER_PET) {
-            // 模块已加载，直接显示/隐藏
-            if (newVisible) {
-              syncPetState();
-            } else {
-              // 应该隐藏宠物
-              if (window.__TAB_CLEANER_PET.hide) {
-                window.__TAB_CLEANER_PET.hide();
-              }
-            }
-          } else {
-            // 如果模块还没加载（可能加载失败），尝试加载
-            console.log("[Tab Cleaner] Pet module not loaded, loading now...");
-            loadPetScript();
-          }
-        }
-      });
-    }
-    
-    /**
-     * 加载 pet.js 脚本
-     */
-    function loadPetScript() {
-      if (window.__TAB_CLEANER_PET) {
-        console.log("[Tab Cleaner] Pet module already loaded");
-        syncPetState();
-        return;
-      }
-      
-      console.log("[Tab Cleaner] Loading pet module...");
+    try {
       const script = document.createElement('script');
       script.src = chrome.runtime.getURL('assets/pet.js');
       script.onload = () => {
-        console.log("[Tab Cleaner] Pet script loaded, checking module:", window.__TAB_CLEANER_PET);
-        
-        // ✅ 简化：只等待 API 可用，不等待初始化完成（pet.js 自己处理初始化）
-        let waitAttempts = 0;
-        const maxWaitAttempts = 50; // 最多等待 50 次 × 100ms = 5 秒（只等待 API 加载）
-        
-        const waitForPetAPI = () => {
-          waitAttempts++;
-          
-          if (window.__TAB_CLEANER_PET && typeof window.__TAB_CLEANER_PET.show === 'function') {
-            // ✅ v2.2: API 已可用，pet.js 的 loadPetState() 会自动处理显示/隐藏
-            console.log("[Tab Cleaner] ✅ Pet API available, module will auto-sync state...");
-            // 不需要手动调用 syncPetState()，pet.js 已经处理了
-          } else if (waitAttempts < maxWaitAttempts) {
-            // API 还没加载完成，继续等待
-            setTimeout(waitForPetAPI, 100);
-          } else {
-            // ✅ v2.1: 超时后，如果模块已加载，仍然尝试同步状态
-            if (window.__TAB_CLEANER_PET) {
-              console.warn("[Tab Cleaner] ⚠️ Pet API loading timeout, but module exists. Trying to sync anyway...");
-              syncPetState();
-            } else {
-              console.warn("[Tab Cleaner] ⚠️ Pet API loading timeout - module not loaded");
-              // ✅ v2.1: 超时后再等 2 秒，给 pet 模块更多时间
-              setTimeout(() => {
-                if (!window.__TAB_CLEANER_PET) {
-                  console.error("[Tab Cleaner] Pet module completely failed to load");
-                } else {
-                  console.log("[Tab Cleaner] Pet module finally loaded (after timeout), syncing...");
-                  syncPetState();
-                }
-              }, 2000); // 在 5 秒超时后再等 2 秒
-            }
-          }
-        };
-        
-        // 开始等待 API
-        setTimeout(waitForPetAPI, 100);
+        console.log('[Tab Cleaner] pet.js injected into page');
+        // 注意：这里不要去访问 window.__TAB_CLEANER_PET，
+        // 因为 content script 看不到页面环境里的那个对象
+        // pet.js 自己会处理初始化和 storage 监听
       };
       script.onerror = (e) => {
-        console.error("[Tab Cleaner] Failed to load pet.js:", e);
-        // ✅ v2.1: 脚本加载失败时的 fallback：1 秒后重试
-        setTimeout(() => {
-          if (!window.__TAB_CLEANER_PET) {
-            console.warn("[Tab Cleaner] Pet module not loaded, retrying...");
-            loadPetScript();
-          }
-        }, 1000);
+        console.error('[Tab Cleaner] Failed to inject pet.js:', e);
+        // 注入失败时允许以后重试（下次页面加载时会重试）
       };
       (document.head || document.documentElement).appendChild(script);
-    }
-    
-    /**
-     * 同步宠物状态（显示宠物并恢复位置）
-     * ✅ v2.1: 双重保险，show() 失败时尝试 forceShow()
-     */
-    function syncPetState() {
-      if (!window.__TAB_CLEANER_PET) {
-        console.warn("[Tab Cleaner] Pet module not available for sync");
-        return;
-      }
-      
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.get(['petVisible', 'petPosition'], (items) => {
-          if (items.petVisible === true && window.__TAB_CLEANER_PET) {
-            console.log("[Tab Cleaner] Syncing pet state: showing pet...");
-            
-            // ✅ v2.1: 优先尝试使用 show()
-            if (window.__TAB_CLEANER_PET.show) {
-              window.__TAB_CLEANER_PET.show().catch((err) => {
-                console.warn("[Tab Cleaner] Error showing pet, trying forceShow...", err);
-                // ✅ v2.1: show() 失败时，尝试 forceShow()
-                if (window.__TAB_CLEANER_PET.forceShow) {
-                  window.__TAB_CLEANER_PET.forceShow().then((success) => {
-                    if (success) {
-                      console.log("[Tab Cleaner] Pet shown via forceShow()");
-                    } else {
-                      console.error("[Tab Cleaner] Both show() and forceShow() failed");
-                    }
-                  }).catch((e) => {
-                    console.error("[Tab Cleaner] Both show() and forceShow() failed:", e);
-                  });
-                }
-              });
-              
-              // 恢复位置（延迟一下确保容器已创建）
-              if (items.petPosition) {
-                setTimeout(() => {
-                  const container = document.getElementById('tab-cleaner-pet-container');
-                  if (container && items.petPosition.left && items.petPosition.top) {
-                    container.style.left = items.petPosition.left;
-                    container.style.top = items.petPosition.top;
-                    console.log("[Tab Cleaner] Pet position restored:", items.petPosition);
-                  }
-                }, 500); // 增加延迟，确保容器已创建
-              }
-            } else if (window.__TAB_CLEANER_PET.forceShow) {
-              // ✅ v2.1: 如果没有 show() 方法，直接尝试 forceShow()
-              window.__TAB_CLEANER_PET.forceShow().then((success) => {
-                if (success) {
-                  console.log("[Tab Cleaner] Pet shown via forceShow() (no show method)");
-                }
-              });
-            }
-          }
-        });
-      }
+    } catch (e) {
+      console.error('[Tab Cleaner] Unexpected error when injecting pet.js:', e);
     }
   })();
 
