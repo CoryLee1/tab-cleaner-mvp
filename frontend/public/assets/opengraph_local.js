@@ -599,4 +599,57 @@
   
   console.log('[OpenGraph Local] Script execution completed');
   console.log('[OpenGraph Local] Final check - Function available:', typeof window.__TAB_CLEANER_GET_OPENGRAPH);
+  console.log('[OpenGraph Local] Final check - Function is function?', typeof window.__TAB_CLEANER_GET_OPENGRAPH === 'function');
+  
+  // ✅ 最终验证：如果函数仍然不存在，强制暴露一个基础函数
+  if (typeof window.__TAB_CLEANER_GET_OPENGRAPH !== 'function') {
+    console.error('[OpenGraph Local] ⚠️ CRITICAL: Function still not available after all attempts, forcing fallback');
+    try {
+      window.__TAB_CLEANER_GET_OPENGRAPH = function(waitForLoad = false) {
+        console.warn('[OpenGraph Local] Using forced fallback function');
+        const result = {
+          url: window.location.href,
+          title: document.title || window.location.href,
+          description: '',
+          image: '',
+          site_name: '',
+          success: false,
+          error: 'OpenGraph function initialization failed - using fallback',
+          is_local_fetch: true,
+          is_doc_card: false,
+        };
+        
+        // 尝试提取基本数据
+        try {
+          const ogTitle = document.querySelector('meta[property="og:title"]');
+          const ogImage = document.querySelector('meta[property="og:image"]');
+          const ogDescription = document.querySelector('meta[property="og:description"]');
+          
+          if (ogTitle) result.title = ogTitle.getAttribute('content') || result.title;
+          if (ogImage) {
+            const imgUrl = ogImage.getAttribute('content') || '';
+            if (imgUrl) {
+              try {
+                result.image = new URL(imgUrl, window.location.href).href;
+              } catch (e) {
+                result.image = imgUrl;
+              }
+            }
+          }
+          if (ogDescription) result.description = ogDescription.getAttribute('content') || '';
+          
+          if (result.title && result.title !== window.location.href) {
+            result.success = true;
+          }
+        } catch (e) {
+          console.error('[OpenGraph Local] Fallback extraction error:', e);
+        }
+        
+        return waitForLoad ? Promise.resolve(result) : result;
+      };
+      console.log('[OpenGraph Local] ✅ Forced fallback function exposed');
+    } catch (e) {
+      console.error('[OpenGraph Local] ❌ Failed to expose forced fallback:', e);
+    }
+  }
 })();
