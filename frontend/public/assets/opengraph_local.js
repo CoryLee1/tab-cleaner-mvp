@@ -14,10 +14,16 @@
   console.log('[OpenGraph Local] Document readyState:', document.readyState);
   console.log('[OpenGraph Local] Window location:', window.location.href);
 
-  // 避免重复加载
-  if (window.__TAB_CLEANER_OPENGRAPH_LOCAL) {
-    console.log('[OpenGraph Local] Already loaded, skipping...');
+  // ✅ 避免重复加载，但如果函数不存在，允许重新加载
+  if (window.__TAB_CLEANER_OPENGRAPH_LOCAL && typeof window.__TAB_CLEANER_GET_OPENGRAPH === 'function') {
+    console.log('[OpenGraph Local] Already loaded and function exists, skipping...');
     return;
+  }
+  
+  // 如果标志已设置但函数不存在，重置标志（可能是之前的加载失败了）
+  if (window.__TAB_CLEANER_OPENGRAPH_LOCAL && typeof window.__TAB_CLEANER_GET_OPENGRAPH !== 'function') {
+    console.warn('[OpenGraph Local] Flag set but function missing, reloading...');
+    window.__TAB_CLEANER_OPENGRAPH_LOCAL = false;
   }
   
   try {
@@ -467,8 +473,12 @@
     console.debug('[OpenGraph Local] Auto-send setup failed (non-critical):', e);
   }
 
-  // 确保函数被正确暴露（使用 try-catch 包裹，确保即使出错也能暴露函数）
+  // ✅ 确保函数被正确暴露（使用 try-catch 包裹，确保即使出错也能暴露函数）
+  // 注意：这个函数必须在脚本执行时立即暴露，不能延迟
   console.log('[OpenGraph Local] About to expose function...');
+  console.log('[OpenGraph Local] Current window object:', typeof window);
+  console.log('[OpenGraph Local] Can access window?', window !== undefined);
+  
   try {
     /**
      * 暴露全局函数供外部调用

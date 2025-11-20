@@ -790,31 +790,106 @@
               // 继续等待
               setTimeout(checkFunction, 100);
             } else {
-              // 超时，函数仍未找到
+              // 超时，函数仍未找到 - ✅ 最后尝试：从缓存读取
               console.error('[Tab Cleaner Content] ❌ Function still not found after', maxAttempts, 'attempts');
               console.error('[Tab Cleaner Content] Available globals:', Object.keys(window).filter(k => k.includes('TAB_CLEANER')));
               console.error('[Tab Cleaner Content] Script element in DOM?', document.contains(script));
-              if (typeof sendResponse === 'function') {
-                sendResponse({ 
-                  success: false, 
-                  error: `OpenGraph function not found after ${maxAttempts} attempts (${maxAttempts * 100}ms)`,
-                  is_doc_card: false // 明确设置不是 doc 卡片
-                });
-              }
+              
+              // ✅ 最后尝试：从缓存读取（即使函数加载失败，缓存中可能已有数据）
+              chrome.storage.local.get(['recent_opengraph'], (cacheItems) => {
+                if (chrome.runtime.lastError) {
+                  console.error('[Tab Cleaner Content] Failed to get cache:', chrome.runtime.lastError);
+                  if (typeof sendResponse === 'function') {
+                    sendResponse({ 
+                      success: false, 
+                      error: `OpenGraph function not found and cache read failed: ${chrome.runtime.lastError.message}`,
+                      url: window.location.href,
+                      is_doc_card: false
+                    });
+                  }
+                  return;
+                }
+                
+                const recent = cacheItems.recent_opengraph || [];
+                const currentUrl = window.location.href;
+                const cachedData = recent.find(item => item && item.url === currentUrl);
+                
+                if (cachedData) {
+                  console.log('[Tab Cleaner Content] ✅ Found cached data as fallback:', {
+                    url: cachedData.url,
+                    success: cachedData.success,
+                    hasTitle: !!(cachedData.title),
+                    hasImage: !!(cachedData.image)
+                  });
+                  if (typeof sendResponse === 'function') {
+                    sendResponse(cachedData);
+                  }
+                } else {
+                  // 如果缓存也没有，返回错误
+                  console.error('[Tab Cleaner Content] ❌ No cached data available either');
+                  if (typeof sendResponse === 'function') {
+                    sendResponse({ 
+                      success: false, 
+                      error: `OpenGraph function not found and no cached data available for ${currentUrl}`,
+                      url: currentUrl,
+                      is_doc_card: false
+                    });
+                  }
+                }
+              });
             }
           };
           
           // 立即开始检查
           setTimeout(checkFunction, 100);
         };
+        
         script.onerror = (e) => {
           console.error('[Tab Cleaner Content] ❌ Failed to load script:', e);
           console.error('[Tab Cleaner Content] Script error event:', e);
           console.error('[Tab Cleaner Content] Script src:', script.src);
-          if (typeof sendResponse === 'function') {
-            sendResponse({ success: false, error: 'Failed to load opengraph_local.js' });
-          }
+          
+          // ✅ 脚本加载失败，尝试从缓存读取
+          chrome.storage.local.get(['recent_opengraph'], (cacheItems) => {
+            if (chrome.runtime.lastError) {
+              console.error('[Tab Cleaner Content] Failed to get cache:', chrome.runtime.lastError);
+              if (typeof sendResponse === 'function') {
+                sendResponse({ 
+                  success: false, 
+                  error: `Script load failed: ${chrome.runtime.lastError.message}`,
+                  url: window.location.href,
+                  is_doc_card: false
+                });
+              }
+              return;
+            }
+            
+            const recent = cacheItems.recent_opengraph || [];
+            const currentUrl = window.location.href;
+            const cachedData = recent.find(item => item && item.url === currentUrl);
+            
+            if (cachedData) {
+              console.log('[Tab Cleaner Content] ✅ Found cached data after script error:', cachedData.url);
+              if (typeof sendResponse === 'function') {
+                sendResponse(cachedData);
+              }
+            } else {
+              if (typeof sendResponse === 'function') {
+                sendResponse({ 
+                  success: false, 
+                  error: 'Script load failed and no cached data available',
+                  url: currentUrl,
+                  is_doc_card: false
+                });
+              }
+            }
+          });
         };
+        
+        // 将脚本添加到 DOM
+        (document.head || document.documentElement).appendChild(script);
+        
+        return true; // 保持消息通道开放
         
         // 监听全局错误，捕获脚本执行错误
         const errorHandler = (event) => {
