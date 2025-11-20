@@ -441,32 +441,63 @@
     console.log('[OpenGraph Local] ✅ MutationObserver setup complete');
   }
 
-  // 页面加载完成后自动提取（优化版本）
+  // ✅ 改进：立即执行初始提取 + 后续优化
   try {
-    // 立即提取一次（快速响应）
-    if (document.readyState === 'loading') {
-      // 页面还在加载，等待 DOMContentLoaded
-      document.addEventListener('DOMContentLoaded', () => {
-        console.log('[OpenGraph Local] DOMContentLoaded, starting smart extraction...');
-        smartExtract();
-        setupMutationObserver();
-      }, { once: true });
-    } else {
-      // 页面已加载，立即提取
-      console.log('[OpenGraph Local] Page already loaded, starting smart extraction...');
-      smartExtract();
-      setupMutationObserver();
-    }
-
-    // 监听 load 事件（确保所有资源加载完成）
-    window.addEventListener('load', () => {
-      console.log('[OpenGraph Local] Window load event, final extraction attempt...');
-      if (extractionAttempts < MAX_EXTRACTION_ATTEMPTS) {
+    // 🚀 第一步：立即执行一次提取（不等待 load！这是关键）
+    // 这确保用户快速点击"清理"时也能获取到数据
+    console.log('[OpenGraph Local] [IMMEDIATE] Executing immediate extraction...');
+    const immediateData = extractOpenGraphLocal();
+    lastExtractedData = immediateData;
+    console.log('[OpenGraph Local] [IMMEDIATE] First extraction complete:', {
+      success: immediateData.success,
+      hasTitle: !!(immediateData.title),
+      hasImage: !!(immediateData.image)
+    });
+    
+    // 第二步：发送到后台（可选，不影响主要功能）
+    sendOpenGraphToBackground();
+    
+    // 第三步：如果数据不完整，继续监听和优化
+    if (!isDataComplete(immediateData)) {
+      console.log('[OpenGraph Local] Data not complete, setting up mutation observer and retries...');
+      
+      // 等待 DOMContentLoaded 再做一次更深入的扫描
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          console.log('[OpenGraph Local] DOMContentLoaded, attempting re-extraction...');
+          if (extractionAttempts < MAX_EXTRACTION_ATTEMPTS) {
+            smartExtract();
+          }
+        }, { once: true });
+      } else {
+        // 页面已加载，等待一下再尝试
         setTimeout(() => {
-          smartExtract();
+          console.log('[OpenGraph Local] Page already loaded, attempting delayed re-extraction...');
+          if (extractionAttempts < MAX_EXTRACTION_ATTEMPTS) {
+            smartExtract();
+          }
         }, 500);
       }
-    }, { once: true });
+      
+      // 监听 load 事件做最后优化
+      if (document.readyState !== 'complete') {
+        window.addEventListener('load', () => {
+          console.log('[OpenGraph Local] Window load event, final extraction attempt...');
+          if (extractionAttempts < MAX_EXTRACTION_ATTEMPTS) {
+            setTimeout(() => {
+              smartExtract();
+            }, 500);
+          }
+        }, { once: true });
+      }
+      
+      // 设置 mutation observer
+      setupMutationObserver();
+    } else {
+      console.log('[OpenGraph Local] ✅ Data already complete, skipping additional monitoring');
+      // 数据已完整，但仍设置 observer 以防后续改变
+      setupMutationObserver();
+    }
 
   } catch (e) {
     // 静默失败，不影响主要功能
