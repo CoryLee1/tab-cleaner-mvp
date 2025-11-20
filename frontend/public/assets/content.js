@@ -2,55 +2,27 @@
   if (window.__TAB_CLEANER_CONTENT_INSTALLED) return;
   window.__TAB_CLEANER_CONTENT_INSTALLED = true;
 
-  // ✅ Always inject opengraph_local.js into the page world on page load
+  // 加载本地 OpenGraph 抓取工具
   // Note: Content scripts run in an isolated world and cannot access page-world globals,
   // so we inject the script and let it communicate via window.postMessage
-  // ✅ FIX: Use inline script injection to bypass CSP restrictions (Pinterest, Instagram, etc.)
-  (function injectOpenGraphScriptOnce() {
-    // Use a flag in the content script's isolated world to avoid duplicate injection
+  (function loadOpenGraphLocal() {
+    // 用 content script 自己的 flag 防止重复注入
     if (window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED) {
-      console.log('[Tab Cleaner Content] opengraph_local already marked as loaded in this world, skipping inject.');
+      console.log('[Tab Cleaner] opengraph_local.js already injected (content world flag)');
       return;
     }
-    
-    // Mark as loading to prevent duplicate attempts
-    window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED = 'loading';
-    
-    // Fetch the script content and inject as inline script (bypasses CSP)
-    const scriptUrl = chrome.runtime.getURL('assets/opengraph_local.js');
-    
-    fetch(scriptUrl)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Failed to fetch script: ${response.status} ${response.statusText}`);
-        }
-        return response.text();
-      })
-      .then(jsCode => {
-        try {
-          // Inject as inline script (CSP-safe)
-          const script = document.createElement('script');
-          script.textContent = jsCode;
-          (document.head || document.documentElement).appendChild(script);
-          
-          // Remove script tag after injection
-          script.remove();
-          
-          // Script is injected, mark as executed
-          // The script will execute synchronously when appended to DOM
-          console.log('[Tab Cleaner] ✅ Injected OpenGraph inline script executed.');
-          window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED = true;
-          
-          console.log('[Tab Cleaner Content] ✅ Injected opengraph_local as inline script (CSP-safe).');
-        } catch (err) {
-          console.error('[Tab Cleaner Content] ❌ Failed to inject inline script:', err);
-          window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED = false;
-        }
-      })
-      .catch(error => {
-        console.error('[Tab Cleaner Content] ❌ Failed to fetch opengraph_local.js:', error);
-        window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED = false;
-      });
+
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('assets/opengraph_local.js');
+    script.onload = () => {
+      console.log('[Tab Cleaner] OpenGraph local script injected into page');
+    };
+    script.onerror = (e) => {
+      console.error('[Tab Cleaner] Failed to load opengraph_local.js:', e);
+    };
+
+    (document.head || document.documentElement).appendChild(script);
+    window.__TAB_CLEANER_OPENGRAPH_LOCAL_LOADED = true;
   })();
 
   // ✅ v2.4: pet.js 现在作为 content script 在 manifest.json 中加载
@@ -656,61 +628,70 @@
       return true; // 保持消息通道开放
     }
     if (req.action === "fetch-opengraph") {
-      // ✅ Simplified: Only read cached OpenGraph data from chrome.storage.local
-      // Content scripts run in an isolated world and cannot access page-world globals,
-      // so we rely on opengraph_local.js (injected on page load) to extract data
-      // and save it via window.postMessage -> chrome.storage.local
       console.log('[Tab Cleaner Content] fetch-opengraph requested');
-      
-      chrome.storage.local.get(['recent_opengraph'], (items) => {
-        if (chrome.runtime.lastError) {
-          console.error('[Tab Cleaner Content] ❌ Failed to get recent_opengraph:', chrome.runtime.lastError);
-          if (typeof sendResponse === 'function') {
-            sendResponse({ 
-              success: false, 
-              error: `Failed to read cache: ${chrome.runtime.lastError.message}`,
-              is_doc_card: false
+
+      const currentUrl = window.location.href;
+      const MAX_ATTEMPTS = 6;   // 最多重试 6 次
+      const DELAY_MS = 300;     // 每次间隔 300ms
+
+      const readFromCache = (attempt = 1) => {
+        console.log(`[Tab Cleaner Content] Reading from recent_opengraph cache (attempt ${attempt}/${MAX_ATTEMPTS})...`);
+
+        chrome.storage.local.get(['recent_opengraph'], (items) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Tab Cleaner Content] ❌ Failed to get recent_opengraph:', chrome.runtime.lastError);
+            if (typeof sendResponse === 'function') {
+              sendResponse({
+                success: false,
+                error: chrome.runtime.lastError.message,
+                is_doc_card: false,
+              });
+            }
+            return;
+          }
+
+          const recent = items.recent_opengraph || [];
+          const cachedData = recent.find(item => item && item.url === currentUrl);
+
+          if (cachedData) {
+            console.log('[Tab Cleaner Content] ✅ Found cached data:', {
+              url: cachedData.url,
+              success: cachedData.success,
+              hasTitle: !!cachedData.title,
+              hasImage: !!cachedData.image,
             });
+
+            if (cachedData.is_doc_card === undefined) {
+              cachedData.is_doc_card = false;
+            }
+
+            if (typeof sendResponse === 'function') {
+              sendResponse(cachedData);
+            }
+            return;
           }
-          return;
-        }
-        
-        const recent = items.recent_opengraph || [];
-        const currentUrl = window.location.href;
-        
-        // Find cached data for current URL
-        const cachedData = recent.find(item => item && item.url === currentUrl);
-        
-        if (cachedData) {
-          console.log('[Tab Cleaner Content] ✅ Using cached OpenGraph:', {
-            url: cachedData.url,
-            success: cachedData.success,
-            hasTitle: !!(cachedData.title),
-            hasImage: !!(cachedData.image)
-          });
-          
-          // Ensure is_doc_card is set
-          if (cachedData.is_doc_card === undefined) {
-            cachedData.is_doc_card = false;
+
+          // 没找到缓存，看看要不要重试
+          if (attempt < MAX_ATTEMPTS) {
+            console.log('[Tab Cleaner Content] ⚠️ No cached data yet, will retry...');
+            setTimeout(() => readFromCache(attempt + 1), DELAY_MS);
+          } else {
+            console.warn('[Tab Cleaner Content] ⚠️ No cached data after retries, returning fallback error');
+            if (typeof sendResponse === 'function') {
+              sendResponse({
+                success: false,
+                error: 'Local OpenGraph data is not ready yet',
+                is_doc_card: false,
+              });
+            }
           }
-          
-          if (typeof sendResponse === 'function') {
-            sendResponse(cachedData);
-          }
-        } else {
-          console.log('[Tab Cleaner Content] ⚠️ No cached OpenGraph data for', currentUrl);
-          if (typeof sendResponse === 'function') {
-            sendResponse({ 
-              success: false, 
-              error: 'No cached OpenGraph data for this URL. Please refresh this page once and try again.',
-              url: currentUrl,
-              is_doc_card: false
-            });
-          }
-        }
-      });
-      
-      return true; // Keep message channel open for async sendResponse
+        });
+      };
+
+      // 开始第一次读取（后续自动重试）
+      readFromCache();
+      // 告诉 Chrome：这个 listener 会异步调用 sendResponse
+      return true;
     }
     return false;
   });
