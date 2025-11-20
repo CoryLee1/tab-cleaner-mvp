@@ -886,12 +886,7 @@
           });
         };
         
-        // 将脚本添加到 DOM
-        (document.head || document.documentElement).appendChild(script);
-        
-        return true; // 保持消息通道开放
-        
-        // 监听全局错误，捕获脚本执行错误
+        // ✅ 监听全局错误，捕获脚本执行错误（在添加脚本之前）
         const errorHandler = (event) => {
           if (event.filename && event.filename.includes('opengraph_local.js')) {
             console.error('[Tab Cleaner Content] ❌ Script execution error:', event.error);
@@ -899,6 +894,15 @@
             console.error('[Tab Cleaner Content] Error filename:', event.filename);
             console.error('[Tab Cleaner Content] Error lineno:', event.lineno);
             window.removeEventListener('error', errorHandler);
+            
+            // 脚本执行错误，尝试从缓存读取
+            chrome.storage.local.get(['recent_opengraph'], (cacheItems) => {
+              const recent = cacheItems.recent_opengraph || [];
+              const cachedData = recent.find(item => item && item.url === window.location.href);
+              if (cachedData && typeof sendResponse === 'function') {
+                sendResponse(cachedData);
+              }
+            });
           }
         };
         window.addEventListener('error', errorHandler);
@@ -908,9 +912,11 @@
           window.removeEventListener('error', errorHandler);
         }, 5000);
         
-          (document.head || document.documentElement).appendChild(script);
-          console.log('[Tab Cleaner Content] Script appended to DOM');
-          return; // 脚本加载是异步的，会在 onload 中处理
+        // ✅ 将脚本添加到 DOM
+        (document.head || document.documentElement).appendChild(script);
+        console.log('[Tab Cleaner Content] Script appended to DOM');
+        
+        return true; // 保持消息通道开放
         }
         
         try {
