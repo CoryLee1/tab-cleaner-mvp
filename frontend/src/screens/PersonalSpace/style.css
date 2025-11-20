@@ -820,6 +820,11 @@
   transition: background-color 0.2s ease;
 }
 
+/* 隐藏时间视图按钮（第三个按钮） */
+.personal-space .view-button:nth-child(3) {
+  display: none !important;
+}
+
 .personal-space .view-button:hover {
   background-color: #666 !important;
 }
