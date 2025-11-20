@@ -22,6 +22,7 @@ import { createManualCluster, classifyByLabels, discoverClusters } from "../../s
 import { calculateStaggerDelay, CLUSTER_ANIMATION } from "../../motion";
 import { useClusterSpringAnimation } from "../../hooks/useClusterSpringAnimation";
 import { getBestImageSource } from "../../utils/imagePlaceholder";
+import FlowingSkyBackground from "../../components/FlowingSkyBackground";
 import "./style.css";
 
 export const PersonalSpace = () => {
@@ -1276,6 +1277,12 @@ export const PersonalSpace = () => {
 
       return (
         <div className="personal-space" ref={containerRef}>
+          {/* 流动天空背景 */}
+          <FlowingSkyBackground
+            speed={0.04}
+            noiseScale={1.6}
+            colors={["#62A5EB", "#6FABE7", "#EAF6FD", "#B4D2E4"]}
+          />
           {viewMode === 'masonry' ? (
             <div style={{ pointerEvents: hasActiveSearch ? 'none' : 'auto' }}>
               <SessionMasonryGrid
