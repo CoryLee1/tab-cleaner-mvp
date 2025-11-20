@@ -916,6 +916,7 @@
   position: fixed !important;
   top: 0 !important;
   z-index: 10 !important;
+  display: none !important; /* 隐藏侧边栏 */
 }
 
 .personal-space .aiclustering-panel {
