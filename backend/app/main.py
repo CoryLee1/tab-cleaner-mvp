@@ -205,9 +205,25 @@ async def generate_embeddings(request: EmbeddingRequest):
     """
     try:
         if not request.opengraph_items:
+            print("[API] ⚠️ No opengraph_items provided in request")
             return {"ok": True, "saved": 0, "data": []}
         
-        print(f"[API] Processing {len(request.opengraph_items)} items for embedding generation")
+        print(f"[API] 📥 Received request with {len(request.opengraph_items)} items for embedding generation")
+        
+        # ✅ 添加详细日志：打印第一个 item 的字段
+        if len(request.opengraph_items) > 0:
+            first_item = request.opengraph_items[0]
+            print(f"[API] 📋 First item sample:", {
+                "url": first_item.get("url"),
+                "has_title": bool(first_item.get("title")),
+                "has_description": bool(first_item.get("description")),
+                "has_image": bool(first_item.get("image")),
+                "image_type": type(first_item.get("image")).__name__ if first_item.get("image") else None,
+                "image_preview": str(first_item.get("image"))[:60] + "..." if first_item.get("image") else None,
+                "tab_id": first_item.get("tab_id"),
+                "is_doc_card": first_item.get("is_doc_card"),
+                "success": first_item.get("success"),
+            })
         
         # ✅ 步骤 0: 规范化输入数据
         from search.normalize import normalize_opengraph_items
