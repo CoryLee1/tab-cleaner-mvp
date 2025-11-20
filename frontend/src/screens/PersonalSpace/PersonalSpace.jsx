@@ -1276,13 +1276,14 @@ export const PersonalSpace = () => {
       const topSearchResults = hasActiveSearch ? searchResults.slice(0, 5) : [];
 
       return (
-        <div className="personal-space" ref={containerRef}>
-          {/* 流动天空背景 */}
+        <>
+          {/* 流动天空背景 - 放在最外层，使用 fixed 定位 */}
           <FlowingSkyBackground
             speed={0.04}
             noiseScale={1.6}
             colors={["#62A5EB", "#6FABE7", "#EAF6FD", "#B4D2E4"]}
           />
+          <div className="personal-space" ref={containerRef} style={{ position: "relative", zIndex: 1 }}>
           {viewMode === 'masonry' ? (
             <div style={{ pointerEvents: hasActiveSearch ? 'none' : 'auto' }}>
               <SessionMasonryGrid
