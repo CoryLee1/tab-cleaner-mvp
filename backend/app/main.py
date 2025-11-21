@@ -366,12 +366,17 @@ async def search_content(request: SearchRequest):
                 detail="Vector database not configured. Please set ADBPG_HOST environment variable."
             )
         
-        # 1. 使用 embed_text() 生成查询的文本 embedding
+        # 1. 查询增强：优化查询文本，提高检索准确度
+        from search.query_enhance import enhance_query
         from search.embed import embed_text
         from vector_db import search_by_text_embedding
         from search.rank import sort_by_vector_similarity
         
-        query_embedding = await embed_text(request.query)
+        # 增强查询文本（添加相关词、同义词等）
+        enhanced_query = enhance_query(request.query, enable_synonym_expansion=True)
+        
+        # 使用增强后的查询生成 embedding
+        query_embedding = await embed_text(enhanced_query)
         if not query_embedding:
             raise HTTPException(
                 status_code=500,
