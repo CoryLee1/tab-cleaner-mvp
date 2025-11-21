@@ -369,6 +369,7 @@ async def search_content(request: SearchRequest):
         # 1. 使用 embed_text() 生成查询的文本 embedding
         from search.embed import embed_text
         from vector_db import search_by_text_embedding
+        from search.rank import sort_by_vector_similarity
         
         query_embedding = await embed_text(request.query)
         if not query_embedding:
@@ -379,8 +380,10 @@ async def search_content(request: SearchRequest):
         
         print(f"[API] Generated query embedding (dimension: {len(query_embedding)})")
         
-        # 2. 使用 search_by_text_embedding() 从数据库检索
-        db_results = await search_by_text_embedding(query_embedding, top_k=top_k)
+        # 2. 从数据库检索更多结果（包含 text_embedding 和 image_embedding）
+        # 扩大 top_k 以获取更多候选，后续会重新排序
+        expanded_top_k = top_k * 3  # 获取 3 倍结果用于融合排序
+        db_results = await search_by_text_embedding(query_embedding, top_k=expanded_top_k)
         
         if not db_results:
             print(f"[API] No results found in database for query: '{request.query}'")
@@ -389,11 +392,24 @@ async def search_content(request: SearchRequest):
                 "results": []
             }
         
-        print(f"[API] Found {len(db_results)} results from vector DB")
+        print(f"[API] Found {len(db_results)} candidate results from vector DB (text embedding)")
         
-        # 3. 格式化返回结果（保持与前端 useSearch 兼容）
+        # 3. 使用 sort_by_vector_similarity 融合文本和图像相似度
+        # 这会同时考虑 text_embedding 和 image_embedding，并提高图像权重
+        ranked_results = sort_by_vector_similarity(
+            query_vec=query_embedding,
+            docs=db_results,
+            weights=None  # 使用自适应权重（会根据内容类型选择，默认已提高图像权重）
+        )
+        
+        # 4. 取前 top_k 个结果
+        final_results = ranked_results[:top_k]
+        
+        print(f"[API] Ranked and selected top {len(final_results)} results (with image embedding fusion)")
+        
+        # 5. 格式化返回结果（保持与前端 useSearch 兼容）
         results = []
-        for item in db_results:
+        for item in final_results:
             results.append({
                 "url": item.get("url", ""),
                 "title": item.get("title") or item.get("tab_title", ""),
